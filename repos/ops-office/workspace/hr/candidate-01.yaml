@@ -1,0 +1,19 @@
+candidate_id: candidate-01
+name: Lena Fischer
+address: "41 Quinpool Road, Halifax, NS B3K 1A2"
+position: Dispatch Coordinator
+department: Operations
+reports_to: Tomas Reyes, Safety Coordinator
+location: Dartmouth yard
+start_date: 2026-12-01
+employment_type: Full-Time, Non-Exempt
+base_salary_cad: 62000
+pay_frequency: bi-weekly
+bonus: Not applicable
+equity: Not applicable
+pto_days: 15
+paid_holidays: 11
+rrsp_match_percent: 3
+offer_deadline: 2026-11-14
+hiring_manager: Tomas Reyes
+hr_contact: hr@alderpoint.example
