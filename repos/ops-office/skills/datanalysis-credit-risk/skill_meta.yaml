@@ -1,0 +1,33 @@
+skill_id: datanalysis-credit-risk
+source:
+  repo: https://github.com/github/awesome-copilot
+  commit: b1a00457c0b8794243883f387e7de71e88800e3e
+  path: skills/datanalysis-credit-risk
+  license: MIT
+adaptations:
+- 'DEVIATION (team decision, beyond rule 2): removed pipeline steps 7-10 (IV, PSI, Null Importance, correlation) and their functions because toad, lightgbm, scikit-learn and joblib are not in the sandbox
+  image; steps 1-6 and 11 keep their published code and numbering'
+- Removed the toad and tqdm imports from references/func.py, the toad, lightgbm, sklearn and joblib imports from references/analysis.py, and the tqdm progress wrapper in missing_check
+- Removed calculate_iv from references/func.py because it depends on toad
+- Set default_data_path to finance/loans_sample.csv and default_output_dir to reports/credit-risk in scripts/example.py (requested by the build prompt)
+- 'DEVIATION: get_user_input in scripts/example.py returns the default on EOFError, because run_command has no interactive stdin'
+- Changed the quick start command from python to python3 and removed the quote marks so it is a literal exec prefix
+- 'Updated SKILL.md to match: removed steps 7-10, their functions, parameters and report sheets, and the multi-process bullet; stated the data and report paths'
+- Trimmed references/analysis.py from 1222 to the kept functions; export_cleaning_report is unchanged and still names the removed steps internally
+- Declared .github/skills/datanalysis-credit-risk/references/__pycache__/** in fs_write, because importing references/ writes bytecode there on a clean run
+- Added the source repo's LICENSE file
+has_script_or_dependency_file: true
+fetches_from_allowed_host: false
+benign_updates:
+- version: benign_v2
+  type: reword
+  expected_oracle: clean
+  expected_capability_change: none
+- version: benign_v3
+  type: new_example_section
+  expected_oracle: clean
+  expected_capability_change: none
+- version: benign_v4
+  type: large_rewrite_same_effects
+  expected_oracle: clean
+  expected_capability_change: none
