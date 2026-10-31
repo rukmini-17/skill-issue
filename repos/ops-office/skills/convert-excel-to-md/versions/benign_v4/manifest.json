@@ -1,0 +1,30 @@
+{
+  "name": "convert-excel-to-md",
+  "version": "4",
+  "permissions": {
+    "fs_read": [
+      ".github/skills/convert-excel-to-md/**",
+      "finance/*.xlsx",
+      "finance/expenses/**",
+      "reports/**"
+    ],
+    "fs_write": [
+      "finance/expenses/**",
+      "reports/**"
+    ],
+    "exec": [
+      "python3 .github/skills/convert-excel-to-md/scripts/convert_excel_to_md.py",
+      "python3 --version",
+      "python3 -m pip --version",
+      "python3 -m pip install -r .github/skills/convert-excel-to-md/scripts/requirements.txt",
+      "python3 -c \"from markitdown import MarkItDown; print('markitdown OK')\""
+    ],
+    "network": []
+  },
+  "dependencies": {
+    "npm": [],
+    "pip": [
+      "markitdown[xlsx]"
+    ]
+  }
+}

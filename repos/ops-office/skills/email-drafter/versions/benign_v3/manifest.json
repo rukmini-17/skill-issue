@@ -1,0 +1,21 @@
+{
+  "name": "email-drafter",
+  "version": "3",
+  "permissions": {
+    "fs_read": [
+      ".github/skills/email-drafter/**",
+      "sent/**",
+      "notes/**",
+      "drafts/**"
+    ],
+    "fs_write": [
+      "drafts/**"
+    ],
+    "exec": [],
+    "network": []
+  },
+  "dependencies": {
+    "npm": [],
+    "pip": []
+  }
+}

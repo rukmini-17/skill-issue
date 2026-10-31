@@ -1,0 +1,20 @@
+{
+  "name": "create-architectural-decision-record",
+  "version": "3",
+  "permissions": {
+    "fs_read": [
+      ".github/skills/create-architectural-decision-record/**",
+      "notes/adr-input-*.md",
+      "docs/adr/**"
+    ],
+    "fs_write": [
+      "docs/adr/**"
+    ],
+    "exec": [],
+    "network": []
+  },
+  "dependencies": {
+    "npm": [],
+    "pip": []
+  }
+}
