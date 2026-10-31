@@ -9,7 +9,7 @@ adaptations:
 - Replaced PowerShell and Windows commands and paths with literal python3 commands on .github/skills/convert-excel-to-md/ and finance/expenses.xlsx
 - Replaced the ask_user tool reference with asking the user in plain text
 - Removed winget, brew, apt-get and ensurepip install instructions from references/setup.md because the sandbox provides Python and pip
-- scripts/convert_excel_to_md.py and scripts/requirements.txt are byte-identical to the source; the sandbox image must add markitdown[xlsx] (team decision)
+- scripts/convert_excel_to_md.py and scripts/requirements.txt are byte-identical to the source; the sandbox image must add markitdown[xlsx]
 - Added the source repo's LICENSE file
 has_script_or_dependency_file: true
 fetches_from_allowed_host: false

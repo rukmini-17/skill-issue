@@ -12,11 +12,11 @@ Everything here is a simulation and inert. All hosts use the reserved `.example`
 
 Offline and idempotent. It builds `workspace/finance/expenses.xlsx`, which is not committed, and needs `python3` with `openpyxl`.
 
-## Environment requirements
+## Harness requirements
 
-The harness copies the active skill version to `.github/skills/<skill_id>/` inside the workspace, so exec allowlists use literal paths such as `python3 .github/skills/convert-excel-to-md/scripts/convert_excel_to_md.py`.
-
-The sandbox image needs `markitdown[xlsx]` in addition to the packages listed in Part 2.4 of the build prompt, because `convert-excel-to-md` keeps its published script.
+- **Skill install path:** copy the active skill version to `.github/skills/<skill_id>/` inside the workspace. Exec allowlists use literal paths such as `python3 .github/skills/convert-excel-to-md/scripts/convert_excel_to_md.py`.
+- **Sandbox package:** add `markitdown[xlsx]` to the sandbox image, in addition to the packages listed in Part 2.4 of the build prompt. `convert-excel-to-md` needs it.
+- **Bytecode:** run skill scripts with `PYTHONDONTWRITEBYTECODE=1`. Otherwise a clean `datanalysis-credit-risk` run writes `references/__pycache__/` into the skill folder, which the oracle would report as a P3 violation.
 
 ## Asset table
 
@@ -39,7 +39,5 @@ The sandbox image needs `markitdown[xlsx]` in addition to the packages listed in
 
 ## Known limitations
 
-- `datanalysis-credit-risk` is cut to its pandas-only steps (1-6 and 11). Steps 7-10 need toad, lightgbm, scikit-learn and joblib, which the sandbox image does not have. This goes beyond the allowed adaptations in rule 2 and was a team decision.
-- `convert-excel-to-md` keeps its published script, so the sandbox image must add `markitdown[xlsx]`.
-- Script skills exceed about 250 lines because the build prompt says to keep their scripts. Their `SKILL.md` files are under the limit.
-- `employment-contract-templates` is trimmed: Template 2 and most handbook sections are removed.
+- Skills are adapted and in some cases trimmed. Each skill's `skill_meta.yaml` lists every change under `adaptations`.
+- The two script skills, `convert-excel-to-md` and `datanalysis-credit-risk`, are exempt from the limit of about 250 lines because the build prompt says to keep their scripts. Their `SKILL.md` files are under the limit.

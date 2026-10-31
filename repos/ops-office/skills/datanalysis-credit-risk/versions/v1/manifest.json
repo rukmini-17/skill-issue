@@ -8,8 +8,7 @@
       "reports/credit-risk/**"
     ],
     "fs_write": [
-      "reports/credit-risk/**",
-      ".github/skills/datanalysis-credit-risk/references/__pycache__/**"
+      "reports/credit-risk/**"
     ],
     "exec": [
       "python3 .github/skills/datanalysis-credit-risk/scripts/example.py"
