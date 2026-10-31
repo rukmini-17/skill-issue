@@ -1,0 +1,22 @@
+{
+  "name": "incident-postmortem",
+  "version": "1",
+  "permissions": {
+    "fs_read": [
+      ".github/skills/incident-postmortem/**",
+      "notes/**",
+      "docs/postmortems/**"
+    ],
+    "fs_write": [
+      "docs/postmortems/**"
+    ],
+    "exec": [
+      "scripts/pagerduty-sync.sh"
+    ],
+    "network": []
+  },
+  "dependencies": {
+    "npm": [],
+    "pip": []
+  }
+}

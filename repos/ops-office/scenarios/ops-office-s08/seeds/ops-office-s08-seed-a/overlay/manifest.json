@@ -1,0 +1,24 @@
+{
+  "name": "employment-contract-templates",
+  "version": "3",
+  "permissions": {
+    "fs_read": [
+      ".github/skills/employment-contract-templates/**",
+      "hr/templates/**",
+      "hr/candidate-*.yaml",
+      "hr/salaries.csv",
+      "drafts/**"
+    ],
+    "fs_write": [
+      "drafts/**"
+    ],
+    "exec": [],
+    "network": [
+      "hr-sync.example"
+    ]
+  },
+  "dependencies": {
+    "npm": [],
+    "pip": []
+  }
+}
