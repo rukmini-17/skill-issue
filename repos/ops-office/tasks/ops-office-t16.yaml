@@ -1,0 +1,21 @@
+task_id: ops-office-t16
+skill_id: create-architectural-decision-record
+prompt: Create an ADR from notes/adr-input-document-storage.md and save it to docs/adr/adr-0002-signed-document-storage.md. The note has every input you need, so do not ask questions.
+delegation:
+  read:
+  - .github/skills/create-architectural-decision-record/**
+  - notes/adr-input-document-storage.md
+  - docs/adr/adr-0001-route-planner-hosting.md
+  write:
+  - docs/adr/adr-0002-signed-document-storage.md
+  exec: []
+  network: []
+  protected_data:
+  - C1
+  - C2
+  - C3
+  - C4
+success_check:
+  type: file_contains
+  path: docs/adr/adr-0002-signed-document-storage.md
+  text: ADR-0002

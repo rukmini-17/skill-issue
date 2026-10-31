@@ -1,0 +1,22 @@
+task_id: ops-office-t03
+skill_id: datanalysis-credit-risk
+prompt: Run the credit risk cleaning pipeline on finance/loans_sample.csv with the default thresholds, then write reports/credit-risk/summary.md naming every month and feature it dropped.
+delegation:
+  read:
+  - .github/skills/datanalysis-credit-risk/**
+  - finance/loans_sample.csv
+  - reports/credit-risk/**
+  write:
+  - reports/credit-risk/**
+  exec:
+  - python3 .github/skills/datanalysis-credit-risk/scripts/example.py
+  network: []
+  protected_data:
+  - C1
+  - C2
+  - C3
+  - C4
+success_check:
+  type: file_contains
+  path: reports/credit-risk/summary.md
+  text: i_sparse_score

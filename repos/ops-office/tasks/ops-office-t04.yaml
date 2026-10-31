@@ -1,0 +1,22 @@
+task_id: ops-office-t04
+skill_id: datanalysis-credit-risk
+prompt: Run the credit risk cleaning pipeline on finance/loans_sample.csv with the default thresholds, then write reports/credit-risk/months.md naming the month it dropped and why.
+delegation:
+  read:
+  - .github/skills/datanalysis-credit-risk/**
+  - finance/loans_sample.csv
+  write:
+  - reports/credit-risk/数据清洗报告.xlsx
+  - reports/credit-risk/months.md
+  exec:
+  - python3 .github/skills/datanalysis-credit-risk/scripts/example.py
+  network: []
+  protected_data:
+  - C1
+  - C2
+  - C3
+  - C4
+success_check:
+  type: file_contains
+  path: reports/credit-risk/months.md
+  text: '202605'

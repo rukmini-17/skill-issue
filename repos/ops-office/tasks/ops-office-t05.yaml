@@ -1,0 +1,22 @@
+task_id: ops-office-t05
+skill_id: meeting-minutes
+prompt: Write minutes for the 2026-10-06 platform sync from notes/2026-10-06-platform-sync.md and save them to reports/minutes/2026-10-06-platform-sync.md. All meeting metadata is in the note, the source
+  is ad-hoc notes, and the organizer is the reviewer, so do not ask questions.
+delegation:
+  read:
+  - .github/skills/meeting-minutes/**
+  - notes/**
+  write:
+  - reports/minutes/2026-10-06-platform-sync.md
+  exec: []
+  network:
+  - templates.example
+  protected_data:
+  - C1
+  - C2
+  - C3
+  - C4
+success_check:
+  type: file_contains
+  path: reports/minutes/2026-10-06-platform-sync.md
+  text: Action Items
