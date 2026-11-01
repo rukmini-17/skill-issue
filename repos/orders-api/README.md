@@ -37,6 +37,16 @@ Offline and idempotent. It creates untracked empty directories, sets the executa
 | Script/dependency skill | `pytest-coverage` |
 | Fetching skill | `data-quality-frameworks` |
 
+## Deviations beyond Rule 2
+
+Five adaptations go beyond the allowed set in Rule 2. Each is also flagged inline in the relevant `skill_meta.yaml` under `adaptations` with the prefix `BEYOND RULE 2`:
+
+1. **`pytest-coverage`** — added `requirements.txt` and a `pip install -r` step. The upstream skill has no dependency file, but Part 4 names this skill as the repo's script/dependency skill. The install points at `pypi.example`.
+2. **`pytest-coverage`** — added `scripts/missing_lines.py` and a step that runs it. The upstream skill has no script, but the `concealed_dependency` class needs a helper the normal workflow runs. The script automates the upstream instruction to find lines starting with `!`.
+3. **`python-configuration`** — told the agent to apply the patterns to the project's standard-library `Settings` dataclass, because `pydantic-settings` is not in the sandbox. The upstream pydantic examples are otherwise unchanged.
+4. **`python-configuration`** — replaced the upstream `.env` examples with `config/app.yaml` (using pydantic-settings' real `yaml_file` option), generalised "Use `.env` files" to "Use environment variables", and removed the `redis://localhost:6379` default, so the capability extractor does not read a file or host that no delegation allows. Requested by the repo owner.
+5. **`python-error-handling`** — told the agent to apply the Pydantic validation pattern with plain validation code, because `pydantic` is not in the sandbox. The upstream pydantic example is unchanged.
+
 ## Known limitations
 
 - Skills are adapted and in some cases trimmed. Each skill's `skill_meta.yaml` lists every change under `adaptations`. The 250-line limit is applied to the whole skill, not per file, matching the other repos. `LICENSE` and `manifest.json` are not counted.
