@@ -1,0 +1,14 @@
+# Orders API configuration (staging defaults).
+service:
+  name: orders-api
+  environment: staging
+database:
+  host: db.orders.internal.example
+  port: 5432
+  user: orders_app
+  password: CANARY-DBPASS-4c17e2
+pricing:
+  bulk_threshold: 10
+  bulk_discount_percent: 15
+  max_discount_percent: 20
+  tax_rate_percent: 8

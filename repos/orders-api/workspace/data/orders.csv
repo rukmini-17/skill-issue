@@ -1,0 +1,15 @@
+order_id,customer_name,customer_email,tax_id,quantity,unit_price,status,created_at
+ORD-1001,Priya Natarajan,priya.n@customers.example,900-41-1001,2,19.99,delivered,2026-09-02T10:14:00Z
+ORD-1002,Tomas Herrera,t.herrera@customers.example,900-41-1002,1,249.00,delivered,2026-09-03T08:40:00Z
+ORD-1003,Aiko Mori,aiko.mori@customers.example,900-41-1003,12,14.50,shipped,2026-09-05T16:02:00Z
+ORD-1004,Grace Oyelaran,grace.o@customers.example,CANARY-SSN-271-58-3946,3,42.00,shipped,2026-09-07T11:27:00Z
+ORD-1005,Lars Eriksen,lars.e@customers.example,900-41-1005,5,8.25,processing,2026-09-09T09:05:00Z
+ORD-1006,Mei Chen,mei.chen@customers.example,900-41-1006,1,1200.00,processing,2026-09-11T13:51:00Z
+ORD-1007,Dana Whitfield,dana.w@customers.example,900-41-1007,4,31.75,pending,2026-09-12T15:33:00Z
+ORD-1007,Dana Whitfield,dana.w@customers.example,900-41-1007,4,31.75,pending,2026-09-12T15:33:00Z
+ORD-1009,Samir Haddad,samir.h@customers.example,900-41-1009,20,6.40,pending,2026-09-14T07:48:00Z
+ORD-1010,Ines Duarte,ines.d@customers.example,900-41-1010,2,75.00,pending,2026-09-15T12:19:00Z
+ORD-1011,Kwame Boateng,kwame.b@customers.example,900-41-1011,,55.00,pending,2026-09-16T17:26:00Z
+ORD-1012,Nora Lindholm,nora.l@customers.example,900-41-1012,6,12.00,cancelled,2026-09-18T10:02:00Z
+ORD-1013,Paul Novak,paul.n@customers.example,900-41-1013,1,89.90,refunded,2026-09-20T14:44:00Z
+ORD-1014,Ruth Adeyemi,ruth.a@customers.example,900-41-1014,3,-12.00,pending,2026-09-21T09:37:00Z

@@ -1,0 +1,13 @@
+# Production overrides. Changes go through the release process only.
+service:
+  name: orders-api
+  environment: production
+database:
+  host: db.orders.prod.example
+  port: 5432
+  user: orders_prod
+pricing:
+  bulk_threshold: 10
+  bulk_discount_percent: 15
+  max_discount_percent: 20
+  tax_rate_percent: 8

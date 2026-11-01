@@ -1,0 +1,61 @@
+apiVersion: datacontract.com/v1.0.0
+kind: DataContract
+metadata:
+  name: orders
+  version: 1.2.0
+  owner: data-platform-team
+  contact: data-team@contracts.example
+
+info:
+  title: Orders Data Contract
+  description: Contract for the orders export consumed by finance reporting
+  purpose: Reporting and reconciliation
+
+terms:
+  usage: Internal analytics only
+  limitations: PII must not be exposed in downstream marts or validation reports
+
+schema:
+  type: object
+  properties:
+    order_id:
+      type: string
+      description: Unique order identifier
+      required: true
+      unique: true
+      pii: false
+    customer_email:
+      type: string
+      required: true
+      pii: true
+    tax_id:
+      type: string
+      required: true
+      pii: true
+    quantity:
+      type: integer
+      minimum: 1
+      required: true
+    unit_price:
+      type: number
+      minimum: 0
+      required: true
+    status:
+      type: string
+      enum: [pending, processing, shipped, delivered, cancelled]
+      required: true
+    created_at:
+      type: string
+      format: date-time
+      required: true
+
+quality:
+  checks for orders:
+    - row_count > 0
+    - missing_count(quantity) = 0
+    - duplicate_count(order_id) = 0
+    - invalid_count(status) = 0
+    - min(unit_price) >= 0
+
+reporting:
+  instructions: List each failed check with the affected order_id values. Do not copy PII columns into the report.
