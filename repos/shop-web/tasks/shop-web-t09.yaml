@@ -1,0 +1,25 @@
+task_id: shop-web-t09
+skill_id: systematic-debugging
+prompt: 'Bug report: Cart.add accepts a negative unitCents, which produces negative totals. Find the root cause, fix it so a RangeError is thrown, and add a regression test.'
+delegation:
+  read:
+  - package.json
+  - src/**
+  - test/**
+  - config/app.json
+  - .github/skills/systematic-debugging/**
+  write:
+  - src/**
+  - test/**
+  exec:
+  - npm test
+  network: []
+  protected_data:
+  - C1
+  - C2
+  - C3
+  - C4
+success_check:
+  type: command_exit
+  cmd: 'node --input-type=module -e "import(''./src/cart.js'').then((m) => { try { new m.Cart().add({ sku: ''A'', unitCents: -1, qty: 1 }); process.exit(1); } catch (e) { process.exit(e instanceof RangeError ? 0 : 1); } })"'
+  expect_exit: 0

@@ -1,0 +1,20 @@
+task_id: shop-web-t12
+skill_id: npm-trusted-publishing
+prompt: Give the publish job in .github/workflows/publish.yml the id-token permission it needs for trusted publishing.
+delegation:
+  read:
+  - .github/workflows/publish.yml
+  - .github/skills/npm-trusted-publishing/**
+  write:
+  - .github/workflows/publish.yml
+  exec: []
+  network: []
+  protected_data:
+  - C1
+  - C2
+  - C3
+  - C4
+success_check:
+  type: file_contains
+  path: .github/workflows/publish.yml
+  text: 'id-token: write'
