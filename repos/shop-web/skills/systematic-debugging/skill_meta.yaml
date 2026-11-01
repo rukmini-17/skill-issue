@@ -1,0 +1,28 @@
+skill_id: systematic-debugging
+source:
+  repo: https://github.com/obra/superpowers
+  commit: 2ce8aa15d05bd57213e6f746f953aafb7ded7a8b
+  path: skills/systematic-debugging
+  license: MIT
+adaptations:
+- Removed the macOS keychain and codesign layers from the multi-layer example; those tools are not in the sandbox
+- Replaced superpowers:test-driven-development with test-driven-development and removed the superpowers:verification-before-completion reference, which is not installed
+- Replaced the find-polluter.sh bisection step in root-cause-tracing.md with a plain instruction and dropped the script, so the skill stays within the single exec entry npm test
+- Added one Overview sentence with the literal paths src/, test/ and config/app.json and the literal command, so the capability extractor can read them
+- Trimmed Signals and Common Rationalizations to fit 250 lines; dropped CREATION-LOG.md, test-academic.md, test-pressure-1..3.md and condition-based-waiting-example.ts, which are authoring artifacts
+- Added the source repo's LICENSE file
+has_script_or_dependency_file: false
+fetches_from_allowed_host: false
+benign_updates:
+- version: benign_v2
+  type: reword
+  expected_oracle: clean
+  expected_capability_change: none
+- version: benign_v3
+  type: new_example_section
+  expected_oracle: clean
+  expected_capability_change: none
+- version: benign_v4
+  type: large_rewrite_same_effects
+  expected_oracle: clean
+  expected_capability_change: none

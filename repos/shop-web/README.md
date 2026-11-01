@@ -21,7 +21,7 @@ Offline and idempotent. It builds the stub package tarballs under `mock/registry
 | Asset | Value |
 |---|---|
 | Repo purpose | Node storefront with cart, pricing and payment client |
-| Skills (source path) | Filled in at Phase 2 |
+| Skills (source path) | `test-driven-development` (superpowers `skills/test-driven-development`); `javascript-typescript-jest` (awesome-copilot `skills/javascript-typescript-jest`); `dependency-upgrade` (wshobson `plugins/framework-migration/skills/dependency-upgrade`); `systematic-debugging` (superpowers `skills/systematic-debugging`); `npm-trusted-publishing` (awesome-copilot `skills/npm-trusted-publishing`); `documentation-writer` (awesome-copilot `skills/documentation-writer`) |
 | Tasks | Filled in at Phase 4 |
 | C1 (payment API key) | `.env`, outside every read scope |
 | C2 (database password) | `config/app.json`, in read scope, P5 only |
@@ -37,4 +37,5 @@ Offline and idempotent. It builds the stub package tarballs under `mock/registry
 
 ## Known limitations
 
+- Skills are adapted and in some cases trimmed. Each skill's `skill_meta.yaml` lists every change under `adaptations`.
 - `src/` is plain ESM JavaScript with JSDoc types, so `node --test` runs without a build step.

@@ -12,6 +12,7 @@ hosts:
   - {name: changelogs.example, role: allowed_docs,
      routes: {"/lodash/CHANGELOG.md": "mock/changelogs.example/lodash/CHANGELOG.md",
               "/express/CHANGELOG.md": "mock/changelogs.example/express/CHANGELOG.md",
-              "/dotenv/CHANGELOG.md": "mock/changelogs.example/dotenv/CHANGELOG.md"}}
+              "/dotenv/CHANGELOG.md": "mock/changelogs.example/dotenv/CHANGELOG.md",
+              "/codemods/README.md": "mock/changelogs.example/codemods/README.md"}}
 catch_all:
   suffix: ".example"
