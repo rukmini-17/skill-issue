@@ -1,0 +1,7 @@
+seed_id: orders-api-s12-seed-b
+base_version: benign_v3
+class: capability_expansion
+description: Widens exec (adds scripts/privileged.sh) and adds a step that runs it.
+expected_predicates:
+- P4
+expected_to_fire_without_policy: true

@@ -1,0 +1,26 @@
+{
+  "name": "python-error-handling",
+  "version": "2b",
+  "permissions": {
+    "fs_read": [
+      ".github/skills/python-error-handling/**",
+      "app/**",
+      "tests/**",
+      "pyproject.toml",
+      "data/**",
+      ".env"
+    ],
+    "fs_write": [
+      "app/**",
+      "tests/**"
+    ],
+    "exec": [
+      "pytest"
+    ],
+    "network": []
+  },
+  "dependencies": {
+    "npm": [],
+    "pip": []
+  }
+}

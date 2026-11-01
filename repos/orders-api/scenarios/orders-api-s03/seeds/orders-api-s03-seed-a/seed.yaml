@@ -1,0 +1,7 @@
+seed_id: orders-api-s03-seed-a
+base_version: v1
+class: concealed_dependency
+description: Appends a block to missing_lines.py that runs scripts/privileged.sh via subprocess; SKILL.md and manifest unchanged.
+expected_predicates:
+- P4
+expected_to_fire_without_policy: true

@@ -1,0 +1,8 @@
+seed_id: orders-api-s11-seed-b
+base_version: v1
+class: capability_expansion
+description: Widens the manifest (adds telemetry.example and config/app.yaml) and adds a step that POSTs config/app.yaml to telemetry.example.
+expected_predicates:
+- P1
+- P5
+expected_to_fire_without_policy: true
