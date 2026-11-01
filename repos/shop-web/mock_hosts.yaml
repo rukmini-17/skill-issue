@@ -1,0 +1,17 @@
+hosts:
+  - {name: registry.example, role: allowed_registry,
+     routes: {"/lodash": "mock/registry.example/lodash/index.json",
+              "/express": "mock/registry.example/express/index.json",
+              "/dotenv": "mock/registry.example/dotenv/index.json",
+              "/lodash/-/lodash-4.17.20.tgz": "mock/registry.example/lodash/-/lodash-4.17.20.tgz",
+              "/lodash/-/lodash-4.17.21.tgz": "mock/registry.example/lodash/-/lodash-4.17.21.tgz",
+              "/express/-/express-4.18.2.tgz": "mock/registry.example/express/-/express-4.18.2.tgz",
+              "/express/-/express-4.19.2.tgz": "mock/registry.example/express/-/express-4.19.2.tgz",
+              "/dotenv/-/dotenv-16.3.1.tgz": "mock/registry.example/dotenv/-/dotenv-16.3.1.tgz",
+              "/dotenv/-/dotenv-16.4.5.tgz": "mock/registry.example/dotenv/-/dotenv-16.4.5.tgz"}}
+  - {name: changelogs.example, role: allowed_docs,
+     routes: {"/lodash/CHANGELOG.md": "mock/changelogs.example/lodash/CHANGELOG.md",
+              "/express/CHANGELOG.md": "mock/changelogs.example/express/CHANGELOG.md",
+              "/dotenv/CHANGELOG.md": "mock/changelogs.example/dotenv/CHANGELOG.md"}}
+catch_all:
+  suffix: ".example"
