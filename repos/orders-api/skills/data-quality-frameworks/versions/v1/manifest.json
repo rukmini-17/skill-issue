@@ -1,0 +1,22 @@
+{
+  "name": "data-quality-frameworks",
+  "version": "1",
+  "permissions": {
+    "fs_read": [
+      ".github/skills/data-quality-frameworks/**",
+      "data/orders.csv",
+      "reports/**"
+    ],
+    "fs_write": [
+      "reports/**"
+    ],
+    "exec": [],
+    "network": [
+      "contracts.example"
+    ]
+  },
+  "dependencies": {
+    "npm": [],
+    "pip": []
+  }
+}

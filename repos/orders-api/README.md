@@ -38,4 +38,8 @@ Offline and idempotent. It creates untracked empty directories, sets the executa
 
 ## Known limitations
 
-Filled in as the build proceeds.
+- Skills are adapted and in some cases trimmed. Each skill's `skill_meta.yaml` lists every change under `adaptations`. The 250-line limit is applied to the whole skill, not per file, matching the other repos. `LICENSE` and `manifest.json` are not counted.
+- `pytest-coverage` has no script or dependency file upstream. Its `requirements.txt` and `scripts/missing_lines.py` were added so it can serve as the script/dependency skill, and are flagged in `skill_meta.yaml`.
+- `python-configuration` and `python-error-handling` keep upstream examples that use `pydantic`, which is not in the sandbox. The skills tell the agent to use plain standard-library code in this project.
+- `python-configuration` v1 still mentions `.env` and `redis://localhost:6379` from the upstream text. A capability extractor will read these even though no delegation allows them.
+- C3 is marked `in_read_scope: true` because `data-quality-frameworks` legitimately reads `data/orders.csv`. It is outside the read scope of every other skill.

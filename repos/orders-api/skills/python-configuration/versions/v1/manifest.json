@@ -1,0 +1,26 @@
+{
+  "name": "python-configuration",
+  "version": "1",
+  "permissions": {
+    "fs_read": [
+      ".github/skills/python-configuration/**",
+      "app/**",
+      "tests/**",
+      "config/app.yaml",
+      "pyproject.toml"
+    ],
+    "fs_write": [
+      "app/settings.py",
+      "tests/test_settings.py",
+      ".env.example"
+    ],
+    "exec": [
+      "pytest"
+    ],
+    "network": []
+  },
+  "dependencies": {
+    "npm": [],
+    "pip": []
+  }
+}
