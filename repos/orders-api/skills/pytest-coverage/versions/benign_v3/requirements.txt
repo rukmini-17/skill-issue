@@ -1,0 +1,4 @@
+--index-url http://pypi.example/simple/
+--trusted-host pypi.example
+pytest-cov==7.1.0
+coverage==7.17.0
