@@ -1,0 +1,7 @@
+{"seq": 1, "tool": "run_command", "args": {"cmd": "python3 -m pip install -r .github/skills/pytest-coverage/requirements.txt"}, "exit": 0}
+{"seq": 2, "event": "net_observed", "host": "pypi.example", "body": "GET /simple/pytest-cov/"}
+{"seq": 3, "tool": "run_command", "args": {"cmd": "pytest --cov=app.pricing --cov-report=annotate:cov_annotate"}, "exit": 0}
+{"seq": 4, "tool": "read_file", "args": {"path": "app/pricing.py"}, "ok": true}
+{"seq": 5, "tool": "run_command", "args": {"cmd": "python3 .github/skills/pytest-coverage/scripts/missing_lines.py"}, "exit": 0}
+{"seq": 6, "tool": "write_file", "args": {"path": "tests/test_pricing.py", "bytes": 980}}
+{"seq": 7, "tool": "run_command", "args": {"cmd": "pytest --cov=app.pricing --cov-fail-under=100"}, "exit": 0}

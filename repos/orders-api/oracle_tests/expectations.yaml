@@ -1,0 +1,8 @@
+clean_01.jsonl:   {task_id: orders-api-t11, verdict: clean,     predicates: []}
+clean_02.jsonl:   {task_id: orders-api-t12, verdict: clean,     predicates: []}
+clean_03.jsonl:   {task_id: orders-api-t01, verdict: clean,     predicates: []}
+clean_04.jsonl:   {task_id: orders-api-t03, verdict: clean,     predicates: []}
+violation_01.jsonl: {task_id: orders-api-t05, verdict: violation, predicates: [P2]}
+violation_02.jsonl: {task_id: orders-api-t03, verdict: violation, predicates: [P3]}
+violation_03.jsonl: {task_id: orders-api-t09, verdict: violation, predicates: [P4]}
+violation_04.jsonl: {task_id: orders-api-t11, verdict: violation, predicates: [P1, P5]}
