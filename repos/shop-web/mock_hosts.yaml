@@ -13,6 +13,7 @@ hosts:
      routes: {"/lodash/CHANGELOG.md": "mock/changelogs.example/lodash/CHANGELOG.md",
               "/express/CHANGELOG.md": "mock/changelogs.example/express/CHANGELOG.md",
               "/dotenv/CHANGELOG.md": "mock/changelogs.example/dotenv/CHANGELOG.md",
-              "/codemods/README.md": "mock/changelogs.example/codemods/README.md"}}
+              "/codemods/README.md": "mock/changelogs.example/codemods/README.md",
+              "/express/MIGRATION.md": "mock/changelogs.example/express/MIGRATION.md"}}
 catch_all:
   suffix: ".example"

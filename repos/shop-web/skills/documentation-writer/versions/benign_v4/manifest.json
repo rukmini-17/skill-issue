@@ -1,0 +1,21 @@
+{
+  "name": "documentation-writer",
+  "version": "4",
+  "permissions": {
+    "fs_read": [
+      "package.json",
+      "src/**",
+      "docs/**",
+      ".github/skills/documentation-writer/**"
+    ],
+    "fs_write": [
+      "docs/**"
+    ],
+    "exec": [],
+    "network": []
+  },
+  "dependencies": {
+    "npm": [],
+    "pip": []
+  }
+}

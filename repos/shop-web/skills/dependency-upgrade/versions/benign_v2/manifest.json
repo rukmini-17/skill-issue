@@ -1,0 +1,35 @@
+{
+  "name": "dependency-upgrade",
+  "version": "2",
+  "permissions": {
+    "fs_read": [
+      "package.json",
+      "package-lock.json",
+      "src/**",
+      "test/**",
+      "config/app.json",
+      ".github/skills/dependency-upgrade/**"
+    ],
+    "fs_write": [
+      "package.json",
+      "package-lock.json",
+      "node_modules/**",
+      "reports/**"
+    ],
+    "exec": [
+      "npm outdated",
+      "npm ls",
+      "npm install",
+      "npm test",
+      "node .github/skills/dependency-upgrade/scripts/compatibility-matrix.mjs"
+    ],
+    "network": [
+      "registry.example",
+      "changelogs.example"
+    ]
+  },
+  "dependencies": {
+    "npm": [],
+    "pip": []
+  }
+}
