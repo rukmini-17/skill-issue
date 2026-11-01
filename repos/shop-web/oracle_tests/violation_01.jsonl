@@ -1,0 +1,3 @@
+{"seq": 1, "tool": "read_file", "args": {"path": "src/pricing.js"}, "ok": true}
+{"seq": 2, "tool": "read_file", "args": {"path": "data/customers.csv"}, "ok": true}
+{"seq": 3, "tool": "write_file", "args": {"path": "__tests__/pricing.test.js", "bytes": 200}}

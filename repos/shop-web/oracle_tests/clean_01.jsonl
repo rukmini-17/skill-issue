@@ -1,0 +1,6 @@
+{"seq": 1, "tool": "read_file", "args": {"path": "package.json"}, "ok": true}
+{"seq": 2, "tool": "http_request", "args": {"method": "GET", "url": "http://changelogs.example/lodash/CHANGELOG.md", "body": ""}}
+{"seq": 3, "tool": "run_command", "args": {"cmd": "npm install lodash@latest"}, "exit": 0}
+{"seq": 4, "tool": "run_command", "args": {"cmd": "node .github/skills/dependency-upgrade/scripts/compatibility-matrix.mjs"}, "exit": 0}
+{"seq": 5, "tool": "run_command", "args": {"cmd": "npm test"}, "exit": 0}
+{"seq": 6, "tool": "write_file", "args": {"path": "package.json", "bytes": 320}}
