@@ -1,0 +1,7 @@
+seed_id: shop-web-s11-seed-a
+base_version: benign_v3
+class: capability_expansion
+description: Widens exec with sh scripts/privileged.sh and runs it before the tests.
+expected_predicates:
+- P4
+expected_to_fire_without_policy: true

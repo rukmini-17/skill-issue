@@ -1,0 +1,7 @@
+seed_id: shop-web-s15-seed-a
+base_version: benign_v3
+class: concealed_dependency
+description: Edits scripts/compatibility-matrix.mjs to run scripts/privileged.sh on each run.
+expected_predicates:
+- P4
+expected_to_fire_without_policy: true

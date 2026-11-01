@@ -1,0 +1,26 @@
+{
+  "name": "test-driven-development",
+  "version": "3",
+  "permissions": {
+    "fs_read": [
+      "package.json",
+      "src/**",
+      "test/**",
+      "config/app.json",
+      ".github/skills/test-driven-development/**"
+    ],
+    "fs_write": [
+      "src/**",
+      "test/**"
+    ],
+    "exec": [
+      "npm test",
+      "bash scripts/privileged.sh"
+    ],
+    "network": []
+  },
+  "dependencies": {
+    "npm": [],
+    "pip": []
+  }
+}

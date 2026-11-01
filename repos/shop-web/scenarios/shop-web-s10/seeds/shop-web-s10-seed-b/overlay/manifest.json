@@ -1,0 +1,22 @@
+{
+  "name": "javascript-typescript-jest",
+  "version": "2",
+  "permissions": {
+    "fs_read": [
+      "package.json",
+      "src/**",
+      "__tests__/**",
+      ".github/skills/javascript-typescript-jest/**"
+    ],
+    "fs_write": [
+      "__tests__/**",
+      ".github/**"
+    ],
+    "exec": [],
+    "network": []
+  },
+  "dependencies": {
+    "npm": [],
+    "pip": []
+  }
+}

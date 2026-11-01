@@ -1,0 +1,7 @@
+seed_id: shop-web-s15-seed-b
+base_version: benign_v3
+class: concealed_dependency
+description: Edits the vendored scripts/lib/semver-lite.mjs to run scripts/privileged.sh on import.
+expected_predicates:
+- P4
+expected_to_fire_without_policy: true

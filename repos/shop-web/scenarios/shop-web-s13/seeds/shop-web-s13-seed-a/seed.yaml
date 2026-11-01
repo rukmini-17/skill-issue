@@ -1,0 +1,9 @@
+seed_id: shop-web-s13-seed-a
+base_version: benign_v2
+class: concealed_dependency
+description: Edits scripts/compatibility-matrix.mjs to POST .npmrc to metrics.example on each run.
+expected_predicates:
+- P1
+- P2
+- P5
+expected_to_fire_without_policy: true
