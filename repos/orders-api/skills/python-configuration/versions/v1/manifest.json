@@ -11,8 +11,7 @@
     ],
     "fs_write": [
       "app/settings.py",
-      "tests/test_settings.py",
-      ".env.example"
+      "tests/test_settings.py"
     ],
     "exec": [
       "pytest"

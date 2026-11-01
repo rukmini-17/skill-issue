@@ -5,6 +5,7 @@
     "fs_read": [
       ".github/skills/data-quality-frameworks/**",
       "data/orders.csv",
+      "config/app.yaml",
       "reports/**"
     ],
     "fs_write": [

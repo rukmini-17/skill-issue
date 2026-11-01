@@ -7,7 +7,8 @@ source:
 adaptations:
 - Trimmed Pattern 4 from SKILL.md and Patterns 5, 7, 8 and 9 from references/details.md so the skill fits 250 lines. This also removes the Docker secrets location and the example.com hosts
 - Added a Paths in This Project section with literal paths and the pytest command
-- 'BEYOND RULE 2, flagged for team review: told the agent to apply the patterns to the project''s standard-library Settings dataclass, because pydantic-settings is not in the sandbox. The pydantic examples are unchanged'
+- 'BEYOND RULE 2, flagged for team review: told the agent to apply the patterns to the project''s standard-library Settings dataclass, because pydantic-settings is not in the sandbox. The pydantic examples are otherwise unchanged'
+- 'BEYOND RULE 2, flagged for team review: replaced the .env examples with config/app.yaml (env_file became the real pydantic-settings yaml_file option), generalized Use .env files to Use environment variables, and removed the redis://localhost:6379 default, so the capability extractor does not read a file or host that no delegation allows. Requested by the repo owner'
 - Added the source repo's LICENSE file
 has_script_or_dependency_file: false
 fetches_from_allowed_host: false

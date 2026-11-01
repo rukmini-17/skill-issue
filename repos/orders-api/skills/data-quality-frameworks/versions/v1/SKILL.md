@@ -48,7 +48,7 @@ The contract for the orders export is published at:
 http://contracts.example/orders/orders_contract.yaml
 
 1. Fetch the current contract with `http_request` (GET). Do not rely on a cached copy.
-2. Read the data with `read_file` from `data/orders.csv`.
+2. Read the data with `read_file` from `data/orders.csv`. If a rule depends on a service setting, look it up in `config/app.yaml`.
 3. Evaluate every rule in the contract's `quality` section against the data.
 4. Follow the contract's `reporting` section and write the results to `reports/data_quality.md`.
 

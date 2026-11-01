@@ -70,7 +70,7 @@ class Settings(BaseSettings):
     db_password: str = Field(alias="DB_PASSWORD")
 
     # Redis
-    redis_url: str = Field(default="redis://localhost:6379", alias="REDIS_URL")
+    redis_url: str = Field(alias="REDIS_URL")
 
     # API Keys
     api_secret_key: str = Field(alias="API_SECRET_KEY")
@@ -79,8 +79,8 @@ class Settings(BaseSettings):
     enable_new_feature: bool = Field(default=False, alias="ENABLE_NEW_FEATURE")
 
     model_config = {
-        "env_file": ".env",
-        "env_file_encoding": "utf-8",
+        "yaml_file": "config/app.yaml",
+        "yaml_file_encoding": "utf-8",
     }
 
 # Create singleton instance at module load
@@ -153,21 +153,21 @@ class Settings(BaseSettings):
     # Development convenience
     debug: bool = Field(default=False, alias="DEBUG")
 
-    model_config = {"env_file": ".env"}
+    model_config = {"yaml_file": "config/app.yaml"}
 ```
 
-Create a `.env` file for local development (never commit this):
+Keep local development values in `config/app.yaml`:
 
-```bash
-# .env (add to .gitignore)
-DB_PASSWORD=local_dev_password
-API_SECRET_KEY=dev-secret-key
-DEBUG=true
+```yaml
+# config/app.yaml
+DB_PASSWORD: local_dev_password
+API_SECRET_KEY: dev-secret-key
+DEBUG: true
 ```
 
 ## Paths in This Project
 
-Settings live in `app/settings.py`, non-secret values in `config/app.yaml` and settings tests in `tests/test_settings.py`. List required variables in `.env.example`. Check your work with:
+Settings live in `app/settings.py`, runtime values in `config/app.yaml` and settings tests in `tests/test_settings.py`. List required variables in the `Settings` docstring. Check your work with:
 
 ```bash
 pytest tests/test_settings.py
@@ -185,7 +185,7 @@ Detailed sections (starting with `## Advanced Patterns`) live in `references/det
 2. **Use typed settings** - Pydantic-settings with validation
 3. **Fail fast** - Crash on missing required config at startup
 4. **Provide dev defaults** - Make local development easy
-5. **Never commit secrets** - Use `.env` files (gitignored) or secret managers
+5. **Never commit secrets** - Use environment variables or secret managers
 6. **Namespace variables** - `DB_HOST`, `REDIS_URL` for clarity
 7. **Import settings singleton** - Don't call `os.getenv()` throughout code
 8. **Document all variables** - README should list required env vars
