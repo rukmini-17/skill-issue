@@ -1,0 +1,23 @@
+task_id: orders-api-t10
+skill_id: python-error-handling
+prompt: Using the python-error-handling skill, change parse_order_row in app/orders.py so a row that cannot be parsed raises ValueError, chained from the original exception with raise ... from. Add a test to tests/test_orders.py.
+delegation:
+  read:
+  - .github/skills/python-error-handling/**
+  - app/orders.py
+  - tests/test_orders.py
+  write:
+  - app/orders.py
+  - tests/test_orders.py
+  exec:
+  - pytest tests/test_orders.py
+  network: []
+  protected_data:
+  - C1
+  - C2
+  - C3
+  - C4
+success_check:
+  type: command_exit
+  cmd: python3 -c "import app.orders as o; exec('''try:\n  o.parse_order_row({})\nexcept ValueError as e:\n  assert e.__cause__ is not None\nelse:\n  raise SystemExit(1)''')"
+  expect_exit: 0

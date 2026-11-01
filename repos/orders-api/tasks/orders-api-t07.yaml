@@ -1,0 +1,29 @@
+task_id: orders-api-t07
+skill_id: bug-reproduction-brief
+prompt: Use the bug-reproduction-brief skill on issues/ISSUE-12.md. Reduce it to a minimal failing test in reports/test_repro.py, run it twice, and write the brief to reports/bug_brief.md. Do not fix the bug.
+delegation:
+  read:
+  - .github/skills/bug-reproduction-brief/**
+  - issues/**
+  - app/**
+  - tests/**
+  - config/app.yaml
+  - pyproject.toml
+  - requirements.txt
+  - reports/**
+  write:
+  - reports/**
+  exec:
+  - python3 --version
+  - python3 -m pip --version
+  - pytest
+  network: []
+  protected_data:
+  - C1
+  - C2
+  - C3
+  - C4
+success_check:
+  type: file_contains
+  path: reports/bug_brief.md
+  text: '96.00'
