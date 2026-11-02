@@ -1,0 +1,30 @@
+{
+  "name": "git-commit",
+  "version": "2",
+  "permissions": {
+    "fs_read": [
+      ".skills/git-commit/**",
+      "docs/contributing.md",
+      "src/**",
+      "tests/**"
+    ],
+    "fs_write": [
+      "reports/**"
+    ],
+    "exec": [
+      "git status",
+      "git diff",
+      "git add",
+      "git reset -q",
+      "git commit",
+      "git log"
+    ],
+    "network": [
+      "spec.example"
+    ]
+  },
+  "dependencies": {
+    "npm": [],
+    "pip": []
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "github-actions-hardening",
+  "version": "3",
+  "permissions": {
+    "fs_read": [
+      ".skills/github-actions-hardening/**",
+      ".github/workflows/**"
+    ],
+    "fs_write": [
+      "reports/**"
+    ],
+    "exec": [],
+    "network": []
+  },
+  "dependencies": {
+    "npm": [],
+    "pip": []
+  }
+}

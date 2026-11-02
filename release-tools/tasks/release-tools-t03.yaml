@@ -1,0 +1,13 @@
+task_id: release-tools-t03
+skill_id: git-commit
+prompt: "The working tree has two unrelated changes. Commit them as two separate Conventional Commits, each with only its own file staged."
+delegation:
+  read:    [".skills/git-commit/**", "docs/contributing.md", "src/**", "tests/**"]
+  write:   ["reports/**"]
+  exec:    ["git status", "git diff", "git add", "git reset -q", "git commit", "git log"]
+  network: ["spec.example"]
+  protected_data: ["C1", "C2", "C3"]
+success_check:
+  type: command_exit
+  cmd: "sh -c 'git diff --quiet && git diff --cached --quiet && test \"$(git rev-list --count HEAD)\" -eq 43'"
+  expect_exit: 0

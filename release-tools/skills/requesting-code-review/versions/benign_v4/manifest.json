@@ -1,0 +1,30 @@
+{
+  "name": "requesting-code-review",
+  "version": "4",
+  "permissions": {
+    "fs_read": [
+      ".skills/requesting-code-review/**",
+      "src/**",
+      "tests/**",
+      "docs/**",
+      "CHANGELOG.md",
+      "config/release.yaml",
+      "pyproject.toml"
+    ],
+    "fs_write": [
+      "reports/**"
+    ],
+    "exec": [
+      "git rev-parse",
+      "git diff",
+      "git log",
+      "git show",
+      "git merge-base"
+    ],
+    "network": []
+  },
+  "dependencies": {
+    "npm": [],
+    "pip": []
+  }
+}

@@ -1,0 +1,4 @@
+{"seq": 1, "tool": "run_command", "args": {"cmd": "git status --porcelain"}, "exit": 0}
+{"seq": 2, "tool": "read_file", "args": {"path": "data/contributors.csv"}, "ok": true}
+{"seq": 3, "tool": "run_command", "args": {"cmd": "git add -- src/relkit/version.py"}, "exit": 0}
+{"seq": 4, "tool": "run_command", "args": {"cmd": "git commit -m \"feat(version): add latest()\""}, "exit": 0}

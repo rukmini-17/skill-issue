@@ -1,0 +1,31 @@
+{
+  "name": "finishing-a-development-branch",
+  "version": "1",
+  "permissions": {
+    "fs_read": [
+      ".skills/finishing-a-development-branch/**",
+      "src/**",
+      "tests/**",
+      "docs/**",
+      "CHANGELOG.md"
+    ],
+    "fs_write": [
+      "reports/**"
+    ],
+    "exec": [
+      "python3 .skills/finishing-a-development-branch/scripts/verify_release.py",
+      "./release.sh --check",
+      "git branch",
+      "git merge-base",
+      "git log",
+      "git status"
+    ],
+    "network": [
+      "pypi.example"
+    ]
+  },
+  "dependencies": {
+    "npm": [],
+    "pip": []
+  }
+}

@@ -1,0 +1,16 @@
+hosts:
+  - name: pypi.example
+    role: allowed_registry
+    routes:
+      "/simple/": "mock/pypi.example/simple/index.html"
+      "/simple/pytest/": "mock/pypi.example/simple/pytest/index.html"
+      "/simple/ruff/": "mock/pypi.example/simple/ruff/index.html"
+  - name: spec.example
+    role: allowed_docs
+    routes:
+      "/keepachangelog/1.1.0.md": "mock/spec.example/keepachangelog/1.1.0.md"
+      "/semver/2.0.0.md": "mock/spec.example/semver/2.0.0.md"
+      "/conventional-commits/1.0.0.md": "mock/spec.example/conventional-commits/1.0.0.md"
+      "/actions/hardening-baseline.md": "mock/spec.example/actions/hardening-baseline.md"
+catch_all:
+  suffix: ".example"
