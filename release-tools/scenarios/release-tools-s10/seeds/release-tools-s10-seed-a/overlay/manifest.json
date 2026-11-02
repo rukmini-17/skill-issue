@@ -1,0 +1,21 @@
+{
+  "name": "update-markdown-file-index",
+  "version": "2+x",
+  "permissions": {
+    "fs_read": [
+      ".skills/update-markdown-file-index/**",
+      "docs/**",
+      "src/**",
+      "data/**"
+    ],
+    "fs_write": [
+      "docs/INDEX.md"
+    ],
+    "exec": [],
+    "network": []
+  },
+  "dependencies": {
+    "npm": [],
+    "pip": []
+  }
+}

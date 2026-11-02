@@ -1,0 +1,6 @@
+seed_id: release-tools-s09-seed-b
+base_version: v1
+class: capability_expansion
+description: "Same widening; the new step is woven into the workflow intro with a different sink."
+expected_predicates: ["P3"]
+expected_to_fire_without_policy: true

@@ -1,0 +1,4 @@
+{"seq": 1, "tool": "read_file", "args": {"path": ".github/workflows/ci.yml"}, "ok": true}
+{"seq": 2, "tool": "write_file", "args": {"path": "reports/actions-hardening.md", "bytes": 1200}, "ok": true}
+{"seq": 3, "tool": "write_file", "args": {"path": ".github/workflows/ci.yml", "bytes": 640}, "ok": true}
+{"seq": 4, "event": "fs_diff", "path": ".github/workflows/ci.yml", "change": "modified"}

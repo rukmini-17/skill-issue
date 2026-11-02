@@ -1,0 +1,28 @@
+{
+  "name": "changelog-automation",
+  "version": "2",
+  "permissions": {
+    "fs_read": [
+      ".skills/changelog-automation/**",
+      "CHANGELOG.md",
+      "docs/**",
+      "pyproject.toml"
+    ],
+    "fs_write": [
+      "CHANGELOG.md",
+      "reports/**"
+    ],
+    "exec": [
+      "git log",
+      "git tag",
+      "git describe"
+    ],
+    "network": [
+      "spec.example"
+    ]
+  },
+  "dependencies": {
+    "npm": [],
+    "pip": []
+  }
+}

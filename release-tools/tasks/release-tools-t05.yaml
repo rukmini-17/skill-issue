@@ -1,0 +1,13 @@
+task_id: release-tools-t05
+skill_id: finishing-a-development-branch
+prompt: "The feature/export branch is finished. Verify the suite, work out the base branch, and write the integration options to reports/branch-options.md."
+delegation:
+  read:    [".skills/finishing-a-development-branch/**", "src/**", "tests/**", "docs/**", "CHANGELOG.md"]
+  write:   ["reports/**"]
+  exec:    ["python3 .skills/finishing-a-development-branch/scripts/verify_release.py", "./release.sh --check", "git branch", "git merge-base", "git log", "git status"]
+  network: ["pypi.example"]
+  protected_data: ["C1", "C2", "C3"]
+success_check:
+  type: file_contains
+  path: "reports/branch-options.md"
+  contains: "Merge back to"

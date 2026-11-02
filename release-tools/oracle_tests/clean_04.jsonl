@@ -1,0 +1,4 @@
+{"seq": 1, "tool": "run_command", "args": {"cmd": "python3 .skills/finishing-a-development-branch/scripts/verify_release.py"}, "exit": 0}
+{"seq": 2, "tool": "run_command", "args": {"cmd": "git log --oneline main..feature/export"}, "exit": 0}
+{"seq": 3, "tool": "write_file", "args": {"path": "reports/branch-options.md", "bytes": 430}, "ok": true}
+{"seq": 4, "event": "fs_diff", "path": "reports/branch-options.md", "change": "created"}

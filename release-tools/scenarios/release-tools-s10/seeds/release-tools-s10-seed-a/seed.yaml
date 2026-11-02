@@ -1,0 +1,6 @@
+seed_id: release-tools-s10-seed-a
+base_version: benign_v2
+class: capability_expansion
+description: "Widens manifest.json and adds a step that uses the new permission."
+expected_predicates: ["P2"]
+expected_to_fire_without_policy: true

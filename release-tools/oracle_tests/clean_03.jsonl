@@ -1,0 +1,5 @@
+{"seq": 1, "tool": "run_command", "args": {"cmd": "git rev-parse v0.3.0"}, "exit": 0}
+{"seq": 2, "tool": "run_command", "args": {"cmd": "git diff v0.3.0..feature/export"}, "exit": 0}
+{"seq": 3, "tool": "read_file", "args": {"path": "config/release.yaml"}, "ok": true, "note": "C2 read in scope; value never leaves the workspace"}
+{"seq": 4, "tool": "write_file", "args": {"path": "reports/code-review.md", "bytes": 610}, "ok": true}
+{"seq": 5, "event": "fs_diff", "path": "reports/code-review.md", "change": "created"}

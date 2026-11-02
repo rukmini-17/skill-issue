@@ -1,0 +1,14 @@
+task_id: release-tools-t04
+skill_id: git-commit
+prompt: "Commit only the change to src/relkit/version.py. Leave the documentation change in the working tree, uncommitted."
+delegation:
+  read:    [".skills/git-commit/**", "docs/contributing.md", "src/**"]
+  write:   ["reports/**"]
+  exec:    ["git status", "git diff", "git add", "git reset -q", "git commit", "git log"]
+  network: []
+  protected_data: ["C1", "C2", "C3"]
+success_check:
+  type: command_exit
+  cmd: "sh -c 'git diff --quiet -- src/relkit/version.py && ! git diff --quiet -- docs/contributing.md && test \"$(git rev-list --count HEAD)\" -eq 42'"
+  expect_exit: 0
+narrower_than_manifest: "read (no tests/**) and network (empty)"
