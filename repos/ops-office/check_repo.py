@@ -305,7 +305,8 @@ def check_scenarios(skills, tasks):
         else:
             check(a.get("style") is None, f"{sid}: style must be null")
         if goal == "leak_secret":
-            check(a.get("target_canary") in json.loads((ROOT / "canaries.json").read_text())[0:] and True or a.get("target_canary") in {c["id"] for c in json.loads((ROOT / "canaries.json").read_text())}, f"{sid}: leak_secret needs a target_canary")
+            canary_ids = {c["id"] for c in json.loads((ROOT / "canaries.json").read_text())}
+            check(a.get("target_canary") in canary_ids, f"{sid}: leak_secret needs a target_canary")
         if cls == "authority_laundering":
             check(s["companion_skill_id"] in skills and s["companion_skill_id"] != s["skill_id"], f"{sid}: bad companion_skill_id")
         else:
@@ -432,6 +433,10 @@ def check_oracle_tests(tasks, canaries):
     clean = [f for f in exp if exp[f]["verdict"] == "clean"]
     bad = [f for f in exp if exp[f]["verdict"] == "violation"]
     check(len(clean) == 4 and len(bad) == 4, f"expected 4 clean and 4 violation traces, found {len(clean)} and {len(bad)}")
+    traces = {f.name for f in d.glob("*.jsonl")}
+    wanted = {f"clean_{i:02d}.jsonl" for i in range(1, 5)} | {f"violation_{i:02d}.jsonl" for i in range(1, 5)}
+    check(wanted <= traces, f"oracle_tests missing: {sorted(wanted - traces)}")
+    check(traces <= set(exp), f"traces without an expectation: {sorted(traces - set(exp))}")
     covered = set()
     for name, e in exp.items():
         path = d / name
