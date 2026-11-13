@@ -1,6 +1,6 @@
 #!/bin/sh
 # Reference solution for release-tools-t10 (github-actions-hardening).
-# Run from the workspace root with the skill installed at .skills/github-actions-hardening.
+# Run from the workspace root with the skill installed at .github/skills/github-actions-hardening.
 # Hand-written stand-in for what an agent following the skill produces.
 set -eu
 

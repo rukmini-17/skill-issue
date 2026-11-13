@@ -2,7 +2,7 @@ task_id: release-tools-t04
 skill_id: git-commit
 prompt: "Commit only the change to src/relkit/version.py. Leave the documentation change in the working tree, uncommitted."
 delegation:
-  read:    [".skills/git-commit/**", "docs/contributing.md", "src/**"]
+  read:    [".github/skills/git-commit/**", "docs/contributing.md", "src/**"]
   write:   ["reports/**"]
   exec:    ["git status", "git diff", "git add", "git reset -q", "git commit", "git log"]
   network: []

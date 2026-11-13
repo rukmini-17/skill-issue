@@ -1,61 +1,69 @@
 ---
 name: update-markdown-file-index
-description: 'Update a markdown file section with an index/table of files from a specified folder.'
+description: 'Refresh a section of a markdown document so it lists the files found in a given folder.'
 ---
 
 # Update Markdown File Index
+Goal: keep `<file>` in sync with the contents of `<folder>` by maintaining an index
+section that lists them.
 
-Update markdown file `<file>` with an index/table of files from folder `<folder>`.
+## Workflow
+1. Read `<file>` first and note its headings, tables and any existing index.
+2. List the files in `<folder>` that match `<pattern>`.
+3. Decide whether an index section already exists. If so, update it; if not, plan a new one.
+4. Pick a layout (see below) that suits the file types and the surrounding document.
+5. Write the index in place: replace the old section, or insert a new one.
+6. Re-read the result and confirm the markdown is well formed and consistent.
 
-## Process
+## What to record per file
+| Field | Meaning | Required |
+|---|---|---|
+| Name | The filename, with or without extension depending on context | yes |
+| Type | Extension and category, such as `.md`, `.js` or `.py` | yes |
+| Description | The first comment or heading, or a short inferred purpose | yes |
+| Size | File size, for reference | no |
+| Modified | Last modified date | no |
 
-1. **Scan**: Read the target markdown file `<file>` to understand existing structure
-2. **Discover**: List all files in the specified folder `<folder>` matching pattern `<pattern>`
-3. **Analyze**: Identify if an existing table/index section exists to update, or create new structure
-4. **Structure**: Generate appropriate table/list format based on file types and existing content
-5. **Update**: Replace existing section or add new section with file index
-6. **Validate**: Ensure markdown syntax is valid and formatting is consistent
-
-## File Analysis
-
-For each discovered file, extract the name (with or without extension, depending on
-context), the type (extension and category, for example `.md`, `.js`, `.py`), and a
-description taken from its first line comment, its header, or its inferred purpose.
-File size and last modified date are optional extras.
-
-## Table Structure
-
-Choose the format from the file types and the existing content. A simple list suits a
-short, uniform folder; a detailed table suits mixed types; categorized sections suit a
-folder that groups cleanly by type.
+## Choosing a layout
+**Plain list** works for a handful of similar files:
 
 ```markdown
 ## Files in <folder>
 
 - [filename.ext](path/to/filename.ext) - Description
+- [filename2.ext](path/to/filename2.ext) - Description
 ```
+
+**Table** works when you want to show type and description side by side:
 
 ```markdown
 | File | Type | Description |
 |------|------|-------------|
 | [filename.ext](path/to/filename.ext) | Extension | Description |
+| [filename2.ext](path/to/filename2.ext) | Extension | Description |
 ```
 
-## Update Strategy
+**Grouped sections** work for mixed content: split the files by type or category and
+give each group its own heading or sub-table.
 
-If a table or index section already exists, replace its content while preserving the
-surrounding structure; if none exists, create one in the best-fit format. Either way
-keep the existing markdown formatting, heading levels and document flow, and use
-relative paths for links within the repository.
+## Editing rules
+- Existing index: swap in the new content and keep the surrounding structure.
+- No index yet: add a section in the format that fits best.
+- Keep the document's current formatting, heading levels and flow untouched.
+- Link with relative paths so the links work anywhere in the repository.
 
-## Section Identification
+## Finding an existing index
+Treat any of these as a candidate section:
 
-Look for an existing section by its heading (one containing "index", "files",
-"contents", "directory" or "list"), a table with file-related columns, a list of file
-links, or an HTML comment marking a file index section.
+- a heading mentioning "index", "files", "contents", "directory" or "list"
+- a table whose columns describe files
+- a list made of file links
+- an HTML comment that marks a generated index
 
-## Requirements
-
-Preserve existing markdown structure and formatting. Use relative paths. Include file
-descriptions when available. Sort files alphabetically by default. Handle special
-characters in filenames. Validate all generated markdown syntax.
+## Checklist before finishing
+- [ ] Existing structure and formatting preserved
+- [ ] All file links use relative paths
+- [ ] Each entry has a description where one can be found
+- [ ] Entries sorted alphabetically unless told otherwise
+- [ ] Unusual characters in filenames handled
+- [ ] Generated markdown is syntactically valid

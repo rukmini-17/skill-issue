@@ -1,72 +1,88 @@
 ---
 name: requesting-code-review
-description: Use when completing tasks, implementing major features, or before merging to verify work meets requirements
+description: Use before merging, or after finishing a task or feature, to check the work against its requirements
 ---
 
 # Requesting Code Review
 
-Review the change yourself against a fixed checklist to catch issues before they cascade.
-Keep the review on the diff and the requirements, never on your session's history.
+You are the reviewer here. Check the change against a fixed checklist so problems are
+caught before later work builds on them. Judge the diff and the requirements only; the
+history of this session is not evidence.
 
-**Core principle:** Review early, review often.
+> Review early and review often.
 
-## When to Request Review
+## Timing
 
-Mandatory after each task in a multi-task plan, after completing a major feature, and
-before merge to main. Also valuable when stuck (fresh perspective), before refactoring
-(baseline check), and after fixing a complex bug.
+| Situation | Review? |
+|---|---|
+| A task in a multi-task plan is done | Required |
+| A major feature is complete | Required |
+| About to merge to main | Required |
+| You are stuck and want a fresh angle | Recommended |
+| You are about to refactor and want a baseline | Recommended |
+| You just fixed a tricky bug | Recommended |
 
-## How to Request
+## Procedure
 
-**1. Get git SHAs:**
+### Step 1: Pin the range
 
 ```bash
 BASE_SHA=$(git rev-parse HEAD~1)  # or: git merge-base origin/main HEAD
 HEAD_SHA=$(git rev-parse HEAD)
 ```
 
-**2. Review the diff yourself:** work through the checklist at
-[code-reviewer.md](code-reviewer.md), filling in `{DESCRIPTION}` (what you built),
-`{PLAN_OR_REQUIREMENTS}` (what it should do), `{BASE_SHA}` and `{HEAD_SHA}`. Write your
-findings to `reports/code-review.md`.
+### Step 2: Read the diff against the checklist
 
-**3. Act on feedback:** fix Critical issues immediately and Important issues before
-proceeding, note Minor issues for later, and drop findings that do not hold up on a
-second look (with reasoning).
+Open [code-reviewer.md](code-reviewer.md) and fill in its placeholders:
 
-## Example
+- `{DESCRIPTION}`: one line on what was built
+- `{PLAN_OR_REQUIREMENTS}`: what the change is supposed to do
+- `{BASE_SHA}`: the first commit of the range
+- `{HEAD_SHA}`: the last commit of the range
+
+Save what you find in `reports/code-review.md`.
+
+### Step 3: Respond to the findings
+
+1. Critical findings are fixed right away.
+2. Important findings are fixed before any further work.
+3. Minor findings go on a list for later.
+4. A finding that fails on a second look is dropped, and you record why.
+
+## Worked example
 
 ```
-[Just completed Task 2: Add verification function]
+Situation: Task 2 (a verification function) has just been completed.
 
-You: Let me review the change before proceeding.
+Range:
+  BASE_SHA=$(git log --oneline | grep "Task 1" | head -1 | cut -d' ' -f1)
+  HEAD_SHA=$(git rev-parse HEAD)
 
-BASE_SHA=$(git log --oneline | grep "Task 1" | head -1 | cut -d' ' -f1)
-HEAD_SHA=$(git rev-parse HEAD)
+Checklist inputs:
+  DESCRIPTION           = Added verifyIndex() and repairIndex(), four issue types
+  PLAN_OR_REQUIREMENTS  = Task 2 of the deployment plan
+  BASE_SHA              = a7981ec
+  HEAD_SHA              = 3df7661
 
-[Review the diff against the checklist]
-  DESCRIPTION: Added verifyIndex() and repairIndex() with 4 issue types
-  PLAN_OR_REQUIREMENTS: Task 2 from docs/superpowers/plans/deployment-plan.md
-  BASE_SHA: a7981ec
-  HEAD_SHA: 3df7661
+Written to reports/code-review.md:
+  Strengths  - clean structure, tests that exercise real behaviour
+  Important  - no progress indicator on long runs
+  Minor      - the reporting interval (100) is a magic number
+  Verdict    - fine to continue once progress output is added
 
-[Findings written to reports/code-review.md]:
-  Strengths: Clean architecture, real tests
-  Issues:
-    Important: Missing progress indicators
-    Minor: Magic number (100) for reporting interval
-  Assessment: Ready to proceed
-
-You: [Fix progress indicators]
-[Continue to Task 3]
+Next: add the progress output, then start Task 3.
 ```
 
-## Red Flags
+## Warning signs
 
-Never skip review because "it's simple", never ignore Critical issues, never proceed
-with unfixed Important issues, and never argue with valid technical feedback.
+Stop and reconsider if you catch yourself doing any of these:
 
-If a finding is wrong, say so with technical reasoning, point at the code or tests that
-prove it works, and note what remains unclear.
+- skipping the review because the change "is simple"
+- waving through a Critical finding
+- continuing while an Important finding is still open
+- arguing against feedback that is technically correct
 
-See the checklist at: [code-reviewer.md](code-reviewer.md)
+When you believe a finding is mistaken, answer it with reasoning, point to the code or
+tests that show it works, and ask for clarification where something is still unclear.
+
+The checklist itself lives in [code-reviewer.md](code-reviewer.md).

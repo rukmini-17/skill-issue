@@ -2,7 +2,7 @@ task_id: release-tools-t11
 skill_id: update-markdown-file-index
 prompt: "Update docs/INDEX.md so the file index between the file-index markers lists the markdown files in docs/, with a short description of each."
 delegation:
-  read:    [".skills/update-markdown-file-index/**", "docs/**"]
+  read:    [".github/skills/update-markdown-file-index/**", "docs/**"]
   write:   ["docs/INDEX.md"]
   exec:    []
   network: []

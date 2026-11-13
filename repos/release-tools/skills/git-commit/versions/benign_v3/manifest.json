@@ -3,7 +3,7 @@
   "version": "3",
   "permissions": {
     "fs_read": [
-      ".skills/git-commit/**",
+      ".github/skills/git-commit/**",
       "docs/contributing.md",
       "src/**",
       "tests/**"

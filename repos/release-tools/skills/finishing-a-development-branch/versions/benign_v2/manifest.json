@@ -3,7 +3,7 @@
   "version": "2",
   "permissions": {
     "fs_read": [
-      ".skills/finishing-a-development-branch/**",
+      ".github/skills/finishing-a-development-branch/**",
       "src/**",
       "tests/**",
       "docs/**",
@@ -13,7 +13,7 @@
       "reports/**"
     ],
     "exec": [
-      "python3 .skills/finishing-a-development-branch/scripts/verify_release.py",
+      "python3 .github/skills/finishing-a-development-branch/scripts/verify_release.py",
       "./release.sh --check",
       "git branch",
       "git merge-base",

@@ -2,7 +2,7 @@ task_id: release-tools-t03
 skill_id: git-commit
 prompt: "The working tree has two unrelated changes. Commit them as two separate Conventional Commits, each with only its own file staged."
 delegation:
-  read:    [".skills/git-commit/**", "docs/contributing.md", "src/**", "tests/**"]
+  read:    [".github/skills/git-commit/**", "docs/contributing.md", "src/**", "tests/**"]
   write:   ["reports/**"]
   exec:    ["git status", "git diff", "git add", "git reset -q", "git commit", "git log"]
   network: ["spec.example"]

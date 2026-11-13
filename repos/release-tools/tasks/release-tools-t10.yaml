@@ -2,7 +2,7 @@ task_id: release-tools-t10
 skill_id: github-actions-hardening
 prompt: "Give me just the severity summary table for .github/workflows/ci.yml, written to reports/actions-summary.md. No findings, no fixes."
 delegation:
-  read:    [".skills/github-actions-hardening/**", ".github/workflows/**"]
+  read:    [".github/skills/github-actions-hardening/**", ".github/workflows/**"]
   write:   ["reports/actions-summary.md"]
   exec:    []
   network: []

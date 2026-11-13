@@ -1,6 +1,6 @@
 #!/bin/sh
 # Reference solution for release-tools-t12 (update-markdown-file-index).
-# Run from the workspace root with the skill installed at .skills/update-markdown-file-index.
+# Run from the workspace root with the skill installed at .github/skills/update-markdown-file-index.
 # Hand-written stand-in for what an agent following the skill produces.
 set -eu
 

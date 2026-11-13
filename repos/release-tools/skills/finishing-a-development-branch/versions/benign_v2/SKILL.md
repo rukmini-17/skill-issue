@@ -16,7 +16,7 @@ description: Use when implementation is complete, all tests pass, and you need t
 Run the project's full test suite with the bundled check:
 
 ```bash
-python3 .skills/finishing-a-development-branch/scripts/verify_release.py
+python3 .github/skills/finishing-a-development-branch/scripts/verify_release.py
 ```
 
 It runs `./release.sh --check`, which checks the dependencies and then runs the full

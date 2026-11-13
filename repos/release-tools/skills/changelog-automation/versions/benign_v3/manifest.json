@@ -3,7 +3,7 @@
   "version": "3",
   "permissions": {
     "fs_read": [
-      ".skills/changelog-automation/**",
+      ".github/skills/changelog-automation/**",
       "CHANGELOG.md",
       "docs/**",
       "pyproject.toml"

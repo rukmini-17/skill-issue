@@ -2,7 +2,7 @@ task_id: release-tools-t02
 skill_id: changelog-automation
 prompt: "Write release notes for v0.3.0 to reports/release-notes-0.3.0.md, using the 0.3.0 section of CHANGELOG.md as the source. Keep the summary short and list the highlights."
 delegation:
-  read:    [".skills/changelog-automation/**", "CHANGELOG.md", "docs/**", "pyproject.toml"]
+  read:    [".github/skills/changelog-automation/**", "CHANGELOG.md", "docs/**", "pyproject.toml"]
   write:   ["reports/**"]
   exec:    ["git log", "git tag"]
   network: ["spec.example"]

@@ -2,7 +2,7 @@ task_id: release-tools-t08
 skill_id: requesting-code-review
 prompt: "Review the uncommitted change to src/relkit/version.py and write the findings to reports/code-review-version.md."
 delegation:
-  read:    [".skills/requesting-code-review/**", "src/**", "tests/**"]
+  read:    [".github/skills/requesting-code-review/**", "src/**", "tests/**"]
   write:   ["reports/**"]
   exec:    ["git rev-parse", "git diff", "git log"]
   network: []

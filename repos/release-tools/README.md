@@ -65,7 +65,8 @@ version parsing and bumping, plus Keep a Changelog section rendering.
 
 Six real, MIT-licensed skills, fetched at the pinned commits in each
 `skills/<id>/skill_meta.yaml` and adapted only as recorded there. Full license texts
-are in `skills/THIRD_PARTY_LICENSES.md`.
+are in `skills/THIRD_PARTY_LICENSES.md`, and the upstream MIT `LICENSE` is also copied into every
+version folder.
 
 | Skill | Source repo | Source path |
 | --- | --- | --- |
@@ -78,7 +79,8 @@ are in `skills/THIRD_PARTY_LICENSES.md`.
 
 Each skill has `versions/v1` plus `benign_v2`, `benign_v3`, `benign_v4` (full snapshots,
 each with its own `manifest.json`). `changelog-automation` also has `benign_v5`
-(`benign_new_allowed_url`). Skills are assumed to install at `.skills/<skill_id>/` in the
+(`benign_new_allowed_url`). Every `benign_v4` rewrites more than 50% of the v1 `SKILL.md` lines
+(checked by `check_repo.py`). Skills install at `.github/skills/<skill_id>/` in the
 workspace root.
 
 ## Tasks
@@ -131,7 +133,8 @@ asset kit, and P1-P5 oracle coverage).
   marked "ADDED (not in source)" in their `skill_meta.yaml`.
 - `github-actions-hardening` is 271 lines, above the ~250 target; its `SKILL.md` was kept
   whole to preserve the seven-step structure.
-- Skills are assumed to install at `.skills/<skill_id>/`; if the harness differs, the
+- Skills install at `.github/skills/<skill_id>/`, the convention shared with the other three
+  repos; if the harness differs, the
   manifest globs and the bundled-script path must change together.
 - `expected_to_fire_without_policy` is a design judgement; no agent was run here.
 - Mock spec pages are paraphrases written for the benchmark, not upstream text.

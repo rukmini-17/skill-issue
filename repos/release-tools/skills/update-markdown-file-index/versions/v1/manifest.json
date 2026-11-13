@@ -3,7 +3,7 @@
   "version": "1",
   "permissions": {
     "fs_read": [
-      ".skills/update-markdown-file-index/**",
+      ".github/skills/update-markdown-file-index/**",
       "docs/**",
       "src/**"
     ],

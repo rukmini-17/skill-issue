@@ -1,56 +1,49 @@
 ---
 name: finishing-a-development-branch
-description: Use when implementation is complete, all tests pass, and you need to decide how to integrate the work
+description: Use once the implementation is done and tests are green, to decide how the work gets integrated
 ---
 
 # Finishing a Development Branch
+## Summary
+The order is: check the tests, find the base branch, lay out the options, then write the
+report.
 
-Integration is a decision, not a step. This skill establishes that the branch is green,
-works out what it forked from, and hands your human partner a written menu. It changes
-no branch state and pushes nothing.
+Begin by saying: "I'm using the finishing-a-development-branch skill to complete this work."
 
-**Announce at start:** "I'm using the finishing-a-development-branch skill to complete this work."
-
-## 1. A Green Suite First
-
+## 1. Check the tests
+Use the bundled check to run the whole suite:
 ```bash
-python3 .skills/finishing-a-development-branch/scripts/verify_release.py
+python3 .github/skills/finishing-a-development-branch/scripts/verify_release.py
 ```
 
-The bundled check wraps `./release.sh --check`, so dependencies are verified and the full
-suite runs, and it prints one summary line. That line is the entry condition for
-everything below: on a failure, report what failed and stop there.
+Behind the scenes it calls `./release.sh --check`, which verifies dependencies and then runs
+every test, and it finishes by printing a single summary line.
 
+A red suite ends the run. Report what failed and do not offer the menu:
 ```
 Tests failing (<N> failures). Must fix before completing:
 
 [Show failures]
 ```
 
-A suite that passed earlier in the session proves nothing about the tree in front of you,
-so the run happens here regardless.
+A green suite means you move on to step 2.
 
-## 2. The Base Branch
-
+## 2. Find the base branch
+The base is the branch this work was cut from. It is typically named in the plan, in the
+conversation, or as the branch's upstream. Confirm it with:
 ```bash
 git branch
 git merge-base <base-branch> HEAD
 ```
 
-Whatever this work forked from is the base, and it is usually named in the plan, in the
-conversation, or in the branch's upstream. If it is not, ask: "This branch split from
-<your best guess> - is that correct?" An unanswered question is not a licence to assume
-`main`: write the guess into the report, labelled as a guess, because a merge into the
-wrong base is expensive to undo.
+When the base is unclear, ask: "This branch split from <your best guess> - is that correct?"
+Nobody around to answer? Put your best guess in the report and label it as a guess, because
+integrating into the wrong base is costly to reverse.
 
-## 3. The Menu
+## 3. Lay out the options
+First, list what the branch contains with `git log --oneline <base-branch>..HEAD`.
 
-```bash
-git log --oneline <base-branch>..HEAD
-```
-
-Present exactly these three options, worded as they stand:
-
+The menu has three entries and no others:
 ```
 Implementation complete. What would you like to do?
 
@@ -61,17 +54,21 @@ Implementation complete. What would you like to do?
 Which option?
 ```
 
-The same menu goes into `reports/branch-options.md`, above the branch name, the base
-branch, the test summary line from Step 1, and the commit list from the command above.
-Option 1 is the only one that would move any branch; options 2 and 3 leave everything
-where it is, and no option sends anything to a remote. Execute none of them. Your human
-partner picks, and the report is what they pick from.
+Keep the wording of the menu as given. Save it to `reports/branch-options.md` along with
+the branch name, the base branch, the test outcome and the list of commits. You never
+perform an option on your own: which one to take is up to your human partner.
 
-## Guard Rails
+## What each option does
+| Option | Merges | Pushes | Removes the branch |
+|--------|--------|--------|--------------------|
+| 1. Merge locally | yes | no | yes |
+| 2. Prepare PR description | no | no | no |
+| 3. Keep as-is | no | no | no |
 
-| Tempting | Why not |
-|----------|---------|
-| "Tests passed earlier this session" | A green run only proves the tree it ran on. Run it on this one. |
-| "They obviously want it merged" | Integration belongs to your human partner. Write the menu and stop. |
-| "The base branch is obviously main" | Confirm the fork point, or record the guess as a guess. |
-| "The merged-result failure is probably flaky" | A red suite ends the process; investigate before anything else. |
+## Excuses and the facts
+| What you might think | What is true |
+|--------|---------|
+| "The tests passed earlier" | A green run vouches only for the tree it ran on, so run the suite on the tree being integrated. |
+| "They clearly want a merge" | The integration choice belongs to your human partner. Show the menu and wait. |
+| "The base is obviously main" | Verify the fork point or ask. A wrong base is expensive to undo. |
+| "That failure on the merged result is flaky" | A failing merged result halts everything; look into it before doing anything else. |

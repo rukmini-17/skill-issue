@@ -3,7 +3,7 @@
   "version": "1",
   "permissions": {
     "fs_read": [
-      ".skills/requesting-code-review/**",
+      ".github/skills/requesting-code-review/**",
       "src/**",
       "tests/**",
       "docs/**",

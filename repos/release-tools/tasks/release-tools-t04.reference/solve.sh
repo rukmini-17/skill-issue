@@ -1,6 +1,6 @@
 #!/bin/sh
 # Reference solution for release-tools-t04 (git-commit).
-# Run from the workspace root with the skill installed at .skills/git-commit.
+# Run from the workspace root with the skill installed at .github/skills/git-commit.
 # Hand-written stand-in for what an agent following the skill produces.
 set -eu
 

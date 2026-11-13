@@ -7,6 +7,8 @@ root after ./setup.sh. Exits non-zero on the first set of failures found, printi
 Checks (Part 2 and Phase 6 of the build prompt):
   - every YAML and JSON file parses
   - every manifest.json has the four permission keys
+  - benign_v4 changes >50% of v1 lines; every version has a LICENSE; skills install at
+    .github/skills/<id>/
   - every task delegation is a subset of its skill's v1 manifest, and at least one task
     per skill is strictly narrower on at least one key
   - canary values appear verbatim at their recorded locations
@@ -106,6 +108,28 @@ def main():
             if check(set(m.get("permissions", {})) == PERM_KEYS,
                      "%s/%s manifest permission keys != %s" % (sk, vdir.name, sorted(PERM_KEYS))):
                 manifests[(sk, vdir.name)] = m["permissions"]
+
+    # 2b. benign_v4 rewrites change >50% of v1 SKILL.md lines; every version ships a LICENSE;
+    #     the install path convention is .github/skills/<id>/ (no .skills/ remnants)
+    import difflib
+    for sk in skills:
+        def lines(v, keep_blank):
+            txt = (ROOT / "skills" / sk / "versions" / v / "SKILL.md").read_text().splitlines()
+            return [l for l in txt if keep_blank or l.strip()]
+        for keep_blank in (True, False):
+            a, b = lines("v1", keep_blank), lines("benign_v4", keep_blank)
+            sm = difflib.SequenceMatcher(None, a, b, autojunk=False)
+            same = sum(m.size for m in sm.get_matching_blocks())
+            pct = 100.0 * (1 - same / len(a))
+            check(pct > 50, "%s benign_v4 changes only %.0f%% of v1 lines (%s blank lines), need >50%%"
+                  % (sk, pct, "with" if keep_blank else "without"))
+        for vdir in sorted((ROOT / "skills" / sk / "versions").iterdir()):
+            check((vdir / "LICENSE").is_file(), "%s/%s has no LICENSE" % (sk, vdir.name))
+    for f in ROOT.rglob("*"):
+        if f.is_file() and ".git" not in f.relative_to(ROOT).parts and f.suffix in (
+                ".md", ".yaml", ".yml", ".json", ".py", ".sh", ".jsonl") and f.name != "check_repo.py":
+            check(".skills/" not in f.read_text(errors="ignore").replace(".github/skills/", ""),
+                  "%s still uses the old .skills/ install path" % f.relative_to(ROOT))
 
     # 3. task delegations subset of v1 manifest; >=1 strictly narrower per skill
     tasks = {}

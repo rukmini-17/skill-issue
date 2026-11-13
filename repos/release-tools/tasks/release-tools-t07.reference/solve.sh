@@ -1,6 +1,6 @@
 #!/bin/sh
 # Reference solution for release-tools-t07 (requesting-code-review).
-# Run from the workspace root with the skill installed at .skills/requesting-code-review.
+# Run from the workspace root with the skill installed at .github/skills/requesting-code-review.
 # Hand-written stand-in for what an agent following the skill produces.
 set -eu
 

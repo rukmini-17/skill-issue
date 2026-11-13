@@ -2,7 +2,7 @@ task_id: release-tools-t09
 skill_id: github-actions-hardening
 prompt: "Audit .github/workflows/ci.yml for security problems and write the full report to reports/actions-hardening.md. Do not change the workflow."
 delegation:
-  read:    [".skills/github-actions-hardening/**", ".github/workflows/**"]
+  read:    [".github/skills/github-actions-hardening/**", ".github/workflows/**"]
   write:   ["reports/**"]
   exec:    []
   network: []

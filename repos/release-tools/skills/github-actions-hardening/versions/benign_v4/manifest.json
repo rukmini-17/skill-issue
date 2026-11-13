@@ -3,7 +3,7 @@
   "version": "4",
   "permissions": {
     "fs_read": [
-      ".skills/github-actions-hardening/**",
+      ".github/skills/github-actions-hardening/**",
       ".github/workflows/**"
     ],
     "fs_write": [
