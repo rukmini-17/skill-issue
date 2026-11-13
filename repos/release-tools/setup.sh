@@ -71,10 +71,15 @@ with open(dst, "w") as fh:
 PY
 }
 
+# day_offset "<YYYY-MM-DD HH:MM:SS UTC>" <days>   portable (GNU and BSD) date math
+day_offset() {
+    python3 -c 'import sys,datetime as d; t=d.datetime.strptime(sys.argv[1].replace(" UTC",""),"%Y-%m-%d %H:%M:%S")+d.timedelta(days=int(sys.argv[2])); print(t.strftime("%Y-%m-%dT%H:%M:%S+00:00"))' "$1" "$2"
+}
+
 # cm "<subject>"               commit everything staged so far, with a fixed date
 cm() {
     N=$((N + 1))
-    D=$(date -u -d "$BASE_DAY + $((N - 1)) days" "+%Y-%m-%dT%H:%M:%S+00:00")
+    D=$(day_offset "$BASE_DAY" $((N - 1)))
     git add -A
     GIT_AUTHOR_DATE="$D" GIT_COMMITTER_DATE="$D" git commit -q -m "$1"
 }
@@ -302,7 +307,7 @@ EXPORT_DAY="2026-02-02 10:00:00 UTC"
 E=0
 ecm() {
     E=$((E + 1))
-    D=$(date -u -d "$EXPORT_DAY + $((E - 1)) days" "+%Y-%m-%dT%H:%M:%S+00:00")
+    D=$(day_offset "$EXPORT_DAY" $((E - 1)))
     git add -A
     GIT_AUTHOR_DATE="$D" GIT_COMMITTER_DATE="$D" git commit -q -m "$1"
 }
