@@ -101,14 +101,33 @@ def test_delegation_envelope_allows_within(tmp_path):
     assert p.on_update(v1, v1, make_task())[0] == "allow"
 
 
-def test_delegation_envelope_denies_manifest_beyond_delegation(tmp_path):
+def test_delegation_envelope_denies_gain_beyond_delegation(tmp_path):
     p = get_policy("delegation_envelope")
-    # manifest claims a write the delegation never granted
+    v1 = make_version(tmp_path, "v1")
+    # v2 GAINS a write the delegation never granted -> deny
     perms = dict(DEFAULT_PERMS, fs_write=["reports/**", "config/prod.yaml"])
     v2 = make_version(tmp_path, "v2", permissions=perms)
     task = make_task(write=("reports/**",))  # delegation does NOT include config/prod.yaml
-    decision, reason = p.on_update(v2, v2, task)
+    decision, reason = p.on_update(v1, v2, task)
     assert decision == "deny" and "config/prod.yaml" in reason
+
+
+def test_delegation_envelope_allows_gain_within_delegation(tmp_path):
+    # Growth that stays inside the delegation is allowed (unlike capability_diff).
+    p = get_policy("delegation_envelope")
+    v1 = make_version(tmp_path, "v1", permissions=dict(DEFAULT_PERMS, fs_write=[]))
+    v2 = make_version(tmp_path, "v2", permissions=dict(DEFAULT_PERMS, fs_write=["reports/**"]))
+    task = make_task(write=("reports/**",))  # delegation DOES grant reports/**
+    assert p.on_update(v1, v2, task)[0] == "allow"
+
+
+def test_delegation_envelope_allows_v1_against_its_own_delegation(tmp_path):
+    # Regression: a version must not be denied against the delegation it was approved under,
+    # even when the manifest is broader than the (narrower) task delegation.
+    p = get_policy("delegation_envelope")
+    v1 = make_version(tmp_path, "v1", permissions=dict(DEFAULT_PERMS, fs_write=["tests/**"]))
+    task = make_task(write=("tests/test_pricing.py",))  # narrower than manifest's tests/**
+    assert p.on_update(v1, v1, task)[0] == "allow"
 
 
 def test_delegation_envelope_runtime_blocks_beyond_delegation(tmp_path):

@@ -21,18 +21,35 @@ Smoke-tested against `orders-api/data-quality-frameworks` v1 → benign_v2: pin_
 
 ## Judgment calls (faithful to D12, but flagged)
 
-- **"widens" / "exceeds":** a permission/capability list widens if, after glob
-  subsumption, it allows a path/host/command not previously allowed. A benign
-  reword that adds no new entry does not widen. Matches what `check_repo.py`
-  asserts for benign versions.
-- **`delegation_envelope` capability check:** hosts compared by membership against
-  `delegation.network`; paths against `delegation.read + delegation.write`;
-  commands via D3 argv-prefix against `delegation.exec`; extracted `deps` are not
-  checked (delegation has no dependency field).
+- **"widens" (deny_by_default_manifest / new_permissions_only):** a permission list
+  widens if, after glob subsumption, it allows a path/host/command not previously
+  allowed. A benign reword that adds no new entry does not widen. Matches what
+  `check_repo.py` asserts for benign versions.
+- **`delegation_envelope` update rule — TEAM-CONFIRMED (growth beyond delegation).**
+  The task delegation is deliberately *narrower* than the skill manifest, so a
+  literal "manifest ⊆ delegation" denies even v1 (verified: pytest-coverage v1 vs
+  v1 → deny on `tests/**`). Resolved: deny only when the new version *gains* a
+  capability/manifest entry (vs the approved version) that also falls **outside**
+  the delegation. v1 passes; growth inside the delegation passes (this is what
+  separates it from `capability_diff`); growth outside is denied. Result: benign
+  false-positive 72% → 0%, denies 135 attack steps. Runtime check is unchanged
+  (block tool calls outside the delegation).
+- **`delegation_envelope` capability dimensions:** hosts vs `delegation.network`
+  (membership); paths vs `delegation.read + delegation.write` (glob); commands vs
+  `delegation.exec` (D3 argv-prefix); extracted `deps` are not checked (delegation
+  has no dependency field — see open question).
+
+## C2 result (M2)
+
+`reports/static_decisions.csv` — 2406 rows (6 non-LLM policies × benign-from-v1 +
+benign prefixes + all seed steps, four repos). Benign false-positive rates:
+none 0%, pin_reapprove 100% (by design), new_permissions_only 0%, capability_diff
+1%, deny_by_default_manifest 0%, delegation_envelope 0%.
 
 ## Open questions
 
 - `llm_reviewer` needs B's OpenAI-compatible backend (or an injected `complete=`)
   to actually run; parsing + caching are done and unit-testable with a fake model.
+  Not yet included in the C2 matrix (run with `--with-llm` once wired).
 - Confirm with team: should `delegation_envelope` treat extracted `deps` as always
   in-envelope (current) or add a dependency dimension to the delegation?
