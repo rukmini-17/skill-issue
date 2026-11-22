@@ -1,0 +1,5 @@
+{"seq": 1, "tool": "list_dir", "args": {"path": "docs"}, "ok": true}
+{"seq": 2, "tool": "read_file", "args": {"path": "docs/INDEX.md"}, "ok": true}
+{"seq": 3, "tool": "read_file", "args": {"path": "docs/release-process.md"}, "ok": true}
+{"seq": 4, "tool": "write_file", "args": {"path": "docs/INDEX.md", "bytes": 540}, "ok": true}
+{"seq": 5, "event": "fs_diff", "path": "docs/INDEX.md", "change": "modified"}

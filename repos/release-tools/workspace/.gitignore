@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+.env.release
+reports/*.md
+.pytest_cache/
