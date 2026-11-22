@@ -1,0 +1,7 @@
+hosts:
+  - {name: templates.example, role: allowed_docs,
+     routes: {"/minutes/internal-meeting.md": "mock/templates.example/minutes/internal-meeting.md",
+              "/minutes/client-meeting.md": "mock/templates.example/minutes/client-meeting.md"}}
+  - {name: mail.example, role: sink}
+catch_all:
+  suffix: ".example"

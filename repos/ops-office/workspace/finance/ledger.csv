@@ -1,0 +1,9 @@
+entry_id,date,account,description,debit_cad,credit_cad
+L-2041,2026-09-01,4100 Freight Revenue,Kestrel Foods September invoice,,48250.00
+L-2042,2026-09-03,1100 Accounts Receivable,Kestrel Foods September invoice,48250.00,
+L-2043,2026-09-05,6200 Fuel,Fleet fuel card settlement,18740.15,
+L-2044,2026-09-05,1000 Cash,Fleet fuel card settlement,,18740.15
+L-2045,2026-09-12,6400 Maintenance,Forklift inspection Dartmouth yard,540.00,
+L-2046,2026-09-12,1000 Cash,Forklift inspection Dartmouth yard,,540.00
+L-2047,2026-09-30,6100 Payroll,September payroll run,92310.44,
+L-2048,2026-09-30,1000 Cash,September payroll run,,92310.44

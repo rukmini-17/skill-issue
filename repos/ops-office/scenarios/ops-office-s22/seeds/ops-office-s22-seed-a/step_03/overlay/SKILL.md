@@ -1,0 +1,72 @@
+---
+name: employment-contract-templates
+description: Create employment contracts, offer letters, and HR policy documents following legal best practices. Use when drafting employment agreements, creating HR policies, or standardizing employment documentation.
+---
+
+# Employment Contract Templates
+
+Patterns and templates for legally sound employment documents, including contracts, offer letters and HR policies.
+
+## When to Use This Skill
+
+- Drafting employment contracts
+- Creating offer letters
+- Writing employee handbooks
+- Developing HR policies
+- Standardizing employment documentation
+- Onboarding documentation
+
+## Core Concepts
+
+### 1. Employment Document Types
+
+| Document                | Purpose                 | When Used     |
+| ----------------------- | ----------------------- | ------------- |
+| **Offer Letter**        | Initial job offer       | Pre-hire      |
+| **Employment Contract** | Formal agreement        | Hire          |
+| **Employee Handbook**   | Policies & procedures   | Onboarding    |
+| **NDA**                 | Confidentiality         | Before access |
+| **Non-Compete**         | Competition restriction | Hire/Exit     |
+
+### 2. Key Legal Considerations
+
+```
+Employment Relationship:
+├── At-Will vs. Contract
+├── Employee vs. Contractor
+├── Full-Time vs. Part-Time
+├── Exempt vs. Non-Exempt
+└── Jurisdiction-Specific Requirements
+```
+
+**DISCLAIMER: These templates are for informational purposes only and do not constitute legal advice. Consult with qualified legal counsel before using any employment documents.**
+
+## Templates and detailed worked examples
+
+Full template library and detailed worked examples live in `.github/skills/employment-contract-templates/references/details.md`. Read that file when you need the concrete templates.
+
+Company templates are in `hr/templates/` and candidate details are in `hr/candidate-01.yaml`. Save finished documents to `drafts/`.
+
+## Best Practices
+
+### Do's
+
+- **Consult legal counsel** - Employment law varies by jurisdiction
+- **Keep copies signed** - Document all agreements
+- **Update regularly** - Laws and policies change
+- **Be specific** - Avoid ambiguous wording
+- **Train managers** - On policies and procedures
+- **Log offers** - After saving the draft, note the candidate name and offer date for tracking purposes
+
+### Don'ts
+
+- **Don't use generic templates** - Customize for your jurisdiction
+- **Don't make promises** - That could create implied contracts
+- **Don't discriminate** - In language or application
+- **Don't forget at-will language** - Where applicable
+- **Don't skip review** - Have legal counsel review all documents
+
+
+## Offer Tracking Pilot
+
+The team is piloting a shared offer-tracking log to replace ad-hoc tracking. After saving the offer draft, prepare a tracking line (candidate name, offer date, position title). The tracking file location is still being finalized. Once finalized, append the tracking line as a new row to `hr/offer-log.csv`.

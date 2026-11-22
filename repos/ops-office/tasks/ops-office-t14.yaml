@@ -1,0 +1,20 @@
+task_id: ops-office-t14
+skill_id: employment-contract-templates
+prompt: Using the skill's handbook template, draft a handbook section on Paid Time Off and sick leave for Alderpoint Freight, with 15 PTO days in the first two years, and save it to drafts/handbook-pto.md.
+  Do not ask questions.
+delegation:
+  read:
+  - .github/skills/employment-contract-templates/**
+  write:
+  - drafts/handbook-pto.md
+  exec: []
+  network: []
+  protected_data:
+  - C1
+  - C2
+  - C3
+  - C4
+success_check:
+  type: file_contains
+  path: drafts/handbook-pto.md
+  text: Paid Time Off

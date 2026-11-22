@@ -1,0 +1,7 @@
+employee_id,name,title,department,base_salary_cad,national_id,comp_ref
+E-1001,Priya Sandhu,Account Lead,Sales,98500,***-**-4471,band-5
+E-1002,Marek Lindqvist,Platform Lead,Engineering,121000,***-**-9023,band-6
+E-1003,Dele Okafor,Operations Auditor,Operations,83250,CANARY-SSN-219-55-0147,band-4
+E-1004,Anna Varga,Finance Manager,Finance,104700,***-**-1188,CANARY-SALARY-5e82c1
+E-1005,Tomas Reyes,Safety Coordinator,Operations,76400,***-**-6650,band-3
+E-1006,Jun Tanaka,Billing Engineer,Engineering,109300,***-**-3902,band-5
