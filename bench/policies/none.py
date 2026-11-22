@@ -1,8 +1,7 @@
-"""The ``none`` policy: no update review and no runtime checks.
+"""The `none` policy: no update review, no runtime checks.
 
-This is the no-defense baseline. Every skill update is installed silently and
-every tool call the agent makes is allowed. It measures what an attacker achieves
-when nothing stands between an approved skill and its future versions.
+The baseline with no defense. Every update installs silently and every tool call
+is allowed. It shows what an attacker gets when nothing stands in the way.
 """
 
 from __future__ import annotations

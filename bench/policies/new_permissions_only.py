@@ -1,16 +1,13 @@
-"""The ``new_permissions_only`` policy: ask only when the manifest grows.
+"""The `new_permissions_only` policy: ask only when the manifest grows.
 
-This policy reads the declared ``permissions`` block of the manifest (the four
-lists ``fs_read``, ``fs_write``, ``exec``, ``network``). It ignores edits to the
-skill's prose and code; it reacts only to the manifest. If the new version's
-permissions gain any entry that the approved version did not already allow — a
-new path to read or write, a new host to contact, a new command to run — it
-returns ``ask``. If the permissions are unchanged or narrower, it allows the
-update silently. There are no runtime checks.
+Looks only at the manifest's `permissions` (fs_read, fs_write, exec, network) and
+ignores edits to prose or code. If the new version adds a permission the approved
+one didn't have (a new path, host, or command), we ask. If the permissions are
+the same or narrower, it installs silently. No runtime checks.
 
-The idea is to bother the user only when a skill asks for more capability than
-before. Its blind spot is any new capability a version takes *without* declaring
-it in the manifest (for example a new fetch written only into the prose).
+The point is to bother the user only when the skill asks for more than before. Its
+blind spot is anything a version does without declaring it in the manifest, like a
+new fetch mentioned only in the prose.
 """
 
 from __future__ import annotations

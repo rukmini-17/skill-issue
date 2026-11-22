@@ -1,14 +1,14 @@
-"""PROVISIONAL data loader for C2 (see RECONCILE.md).
+"""Temporary data loader for C2 (see RECONCILE.md).
 
-Workstream A owns ``bench/common/data.py`` (``load_repo``, ``apply_overlay``); it
-does not exist yet. This module reads the repo layout directly so C2 can run now.
-Its public surface mirrors A's spec so the swap later is one import change:
+A owns `bench/common/data.py` (load_repo, apply_overlay), which doesn't exist yet,
+so this reads the repo layout directly so C2 can run now. It uses the same function
+names A's spec gives, so the later swap is just an import change:
 
-    load_repo(repo_id) -> RepoData(tasks, scenarios, skills, canaries, mock_cfg)
+    load_repo(repo_id) -> tasks, scenarios, skills, canaries, mock config
     apply_overlay(base, overlay_dir, out) -> SkillVersion
     seed_transitions(repo_id, scenario, seed_id, workdir) -> list[Transition]
 
-When A ships, replace imports of this module with ``bench.common.data`` and delete it.
+When A ships, point these imports at bench.common.data and delete this file.
 """
 
 from __future__ import annotations

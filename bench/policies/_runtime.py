@@ -1,11 +1,10 @@
 """Runtime tool-call matching for the two policies that check each call.
 
-Implements D2 (path globs), D3 (command matching) and D4 (network) against the
-arguments of a single ToolCall, provisionally. Like ``_capabilities``, this is a
-stand-in for A's ``bench/common/match.py``: it does lexical ``..``/``.``
-resolution only (no symlink / real-path resolution, which needs the live
-workspace), so when ``common/match.py`` lands, route these three checks through
-it. The public seam is ``tool_call_allowed(call, perms)``.
+Checks a single ToolCall's arguments against the allowed paths, commands and hosts
+(D2-D4). Like _capabilities, this is a stand-in for A's `bench/common/match.py`:
+it resolves `..`/`.` lexically but not symlinks (that needs the live workspace), so
+route these checks through match.py once it lands. The seam is
+tool_call_allowed(call, perms).
 """
 
 from __future__ import annotations

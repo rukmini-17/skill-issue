@@ -1,20 +1,19 @@
-"""The ``delegation_envelope`` policy: hold every version to the delegation the
-user granted at v1, and enforce that delegation at run time.
+"""The `delegation_envelope` policy: hold every version to what the user granted
+at v1, and enforce that grant at run time.
 
-When the user approved v1 for this task they granted a delegation: the paths the
-skill may read and write, the commands it may run, and the hosts it may contact.
-This policy treats that delegation as a fixed envelope. At update time it denies a
-new version that *gains* a capability the previously approved version did not have
-— a new host, path, command, or declared manifest permission — when that gain
-falls outside the delegation. Capability growth that stays inside the delegation is
-allowed (that is what separates this policy from `capability_diff`, which asks on
-any growth at all), and so is v1 itself and any benign reword that adds nothing.
+When the user approved v1 they granted a delegation: which paths the skill may
+read and write, which commands it may run, which hosts it may reach. This policy
+keeps that grant fixed. At update time it denies a new version that gains a
+capability the last approved version didn't have (a new host, path, command, or
+manifest permission) when that gain falls outside the delegation. Growth that
+stays inside the delegation is fine, which is what sets it apart from
+`capability_diff` (which asks on any growth at all); so is v1 itself and any
+reword that adds nothing.
 
-At run time it is a reference monitor against the same delegation: any tool call to
-a path, command or host outside the delegation is blocked. Unlike
-`deny_by_default_manifest`, the runtime boundary is the user's original grant, not
-the skill's own evolving manifest, so a skill cannot widen what it may do by
-shipping a wider manifest.
+At run time it guards against the same grant: any tool call to a path, command, or
+host outside the delegation is blocked. Unlike `deny_by_default_manifest`, the
+boundary is the user's original grant, not the skill's own manifest, so a skill
+can't widen what it's allowed to do just by shipping a wider manifest.
 """
 
 from __future__ import annotations
@@ -61,8 +60,8 @@ class DelegationEnvelopePolicy:
                 exceed[f"manifest.{perm_key}"] = sorted(beyond)
 
         # 2) Extracted capabilities the new version GAINS (vs approved) that fall
-        #    outside the delegation. (deps are not an envelope dimension — the
-        #    delegation has no dependency field; see RECONCILE.md.)
+        #    outside the delegation. We don't check deps here, since the delegation
+        #    has no dependency field (see RECONCILE.md).
         gains = capability_gains(new.root, approved.root)
         read_write = env["fs_read"] + env["fs_write"]
         beyond_hosts = [h for h in gains["hosts"] if h not in set(env["network"])]

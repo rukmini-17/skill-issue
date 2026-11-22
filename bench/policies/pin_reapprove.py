@@ -1,13 +1,11 @@
-"""The ``pin_reapprove`` policy: re-ask whenever the skill's files change at all.
+"""The `pin_reapprove` policy: ask again whenever any file changes.
 
-The user pinned the exact version they approved. Any later version whose file
-contents differ in any way — even a one-word edit to the documentation — is
-treated as something the user must look at again, so the update returns ``ask``.
-A version byte-for-byte identical to the approved one is allowed. There are no
-runtime checks: once a version is installed, its tool calls are not inspected.
+The user approved one exact version. If a later version differs at all, even a
+one-word doc edit, we ask them to look again (`ask`). A version that is identical
+to the approved one is allowed. No runtime checks.
 
-This is the strictest content-pinning defense. It never misses a real change, but
-it also asks on every benign edit, so its benign false-positive rate is high.
+It's the strictest content check. It never misses a real change, but it also asks
+on every harmless edit, so it flags a lot of benign updates.
 """
 
 from __future__ import annotations

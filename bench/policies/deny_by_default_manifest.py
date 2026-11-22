@@ -1,15 +1,14 @@
-"""The ``deny_by_default_manifest`` policy: refuse any manifest that grows, and
+"""The `deny_by_default_manifest` policy: refuse any manifest that grows, and
 enforce the installed manifest at run time.
 
-At update time this policy reads the manifest's ``permissions``. If the new
-version's permissions gain any entry the approved version did not already allow,
-the update is *denied* outright — it is not installed and the user is not asked.
-A version with unchanged or narrower permissions is allowed.
+At update time it reads the manifest's `permissions`. If the new version adds any
+permission the approved one didn't have, the update is denied outright: it isn't
+installed and the user isn't asked. Same or narrower permissions are allowed.
 
-At run time it also acts as a reference monitor: every tool call the agent makes
-is checked against the *installed* version's manifest, and any call to read or
-write a path, run a command, or contact a host that the manifest does not permit
-is blocked. The manifest is treated as a hard capability boundary in both phases.
+At run time it also acts as a guard. Every tool call is checked against the
+installed version's manifest, and anything the manifest doesn't permit (a read,
+write, command, or host) is blocked. The manifest is a hard boundary in both
+phases.
 """
 
 from __future__ import annotations

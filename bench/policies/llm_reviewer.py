@@ -1,16 +1,14 @@
-"""The ``llm_reviewer`` policy: an LLM reads the update's diff and both manifests
-and returns allow / ask / deny.
+"""The `llm_reviewer` policy: an LLM reads the diff and both manifests and returns
+allow / ask / deny.
 
-For each update this policy renders the diff of all files plus the approved and
-new manifests into a reviewer prompt (``prompts/llm_reviewer.md``) and asks a
-language model, at temperature 0, whether the update expands what the skill can do
-beyond what the user approved. The model's answer is parsed into a decision and a
-one-sentence reason. Decisions are cached by a content hash of both versions and
-the prompt, so re-reviewing the same pair is free and deterministic. There are no
-runtime checks.
+For each update it builds a prompt (prompts/llm_reviewer.md) from the file diff and
+the two manifests and asks a model, at temperature 0, whether the update lets the
+skill do more than the user approved. The reply is parsed into a decision and a
+one-line reason. Results are cached by a hash of both versions and the prompt, so
+reviewing the same pair again is free and deterministic. No runtime checks.
 
-This stands in for a human-style review that reads intent, not just declared
-permissions. Its behaviour depends on the model and the prompt, both configurable.
+It stands in for a human review that reads intent, not just declared permissions.
+What it decides depends on the model and the prompt, both configurable.
 """
 
 from __future__ import annotations

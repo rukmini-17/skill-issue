@@ -1,19 +1,18 @@
-"""The ``capability_diff`` policy: ask when the skill's *actual* capabilities grow.
+"""The `capability_diff` policy: ask when the skill's real capabilities grow.
 
-Instead of trusting the manifest, this policy reads every file in the version
-(prose, scripts, references) and extracts the capabilities they imply:
- - hosts, from any URL that appears;
- - workspace paths, from literal path strings;
+Rather than trust the manifest, this reads every file in the version and pulls out
+what it would actually do:
+ - hosts, from URLs;
+ - paths, from literal path strings;
  - shell commands, from bash/sh code blocks;
  - dependencies, from requirements files and Python imports.
-It compares that set against the approved version. If the new version gains any
-host, path, command or dependency, it returns ``ask``; otherwise it allows the
-update. There are no runtime checks.
+If that set grows against the approved version, we ask; otherwise allow. No
+runtime checks.
 
-This catches capability growth that `new_permissions_only` misses, because it
-looks at what the content would actually do rather than what the manifest
-declares. Its cost is sensitivity to wording: a newly mentioned path or command
-in an example block counts as a gain, so benign rewrites can trip it.
+It catches growth that `new_permissions_only` misses, since it looks at the
+content and not just the manifest. The tradeoff is that it's sensitive to wording:
+a path or command newly mentioned in an example counts as growth, so a benign
+rewrite can trip it.
 """
 
 from __future__ import annotations

@@ -1,11 +1,11 @@
 """C3 — replay oracle_tests tool calls through the two runtime policies.
 
-For every oracle-test trace, replay its agent tool calls through each runtime
-policy (`deny_by_default_manifest`, `delegation_envelope`) and check the policy
-blocks the calls the oracle flags — as far as a tool-call check can see. Effects
-that are not agent tool calls (script-internal fs_read/fs_write, child processes,
-secret content in an allowed-host request) are outside what `on_tool_call` can
-see; those gaps are reported per row and summarised in NOTES.md.
+For each oracle-test trace, run its tool calls through the two runtime policies
+(deny_by_default_manifest, delegation_envelope) and check they block the calls the
+oracle flags, as far as a tool-call check can see. Things that aren't agent tool
+calls (reads/writes inside a script, child processes, a secret sent to an allowed
+host) can't be seen by on_tool_call; those gaps are noted per row and summarised in
+NOTES.md.
 
 Writes bench/policies/reports/runtime_checks.csv.
 Run:  python -m bench.policies.runtime_report

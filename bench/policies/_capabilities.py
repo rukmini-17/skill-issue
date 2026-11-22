@@ -1,13 +1,11 @@
-"""Shared helpers for the policies: manifest loading, file hashing, glob
-subsumption, and the capability extractor.
+"""Shared helpers for the policies: loading manifests, hashing files, glob
+matching, and pulling capabilities out of a version.
 
-NOTE (deviation, see NOTES.md): C1 says to reuse ``bench/common/match.py`` for
-glob/command matching. That module is owned by workstream A and does not exist
-yet. To avoid blocking C and to stay out of A's lane, the matching + capability
-extraction live here for now, ported from the per-repo ``check_repo.py``
-capability extractor. When A's ``common/match.py`` lands, swap the glob helpers
-below for it (the public functions here — ``capabilities``, ``glob_within``,
-``file_hashes`` — are the seam).
+Note (see NOTES.md): C1 says to reuse `bench/common/match.py` for the glob and
+command matching, but that's A's module and it doesn't exist yet. So the matching
+and the capability extractor live here for now, ported from each repo's
+check_repo.py. When A's match.py lands, swap the glob helpers below for it. The
+functions to swap are capabilities(), glob_within() and file_hashes().
 """
 
 from __future__ import annotations
