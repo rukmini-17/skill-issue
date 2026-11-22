@@ -317,6 +317,9 @@ class Sandbox:
             "PATH": self._path(),
             "GIT_CONFIG_NOSYSTEM": "1", "GIT_TERMINAL_PROMPT": "0",
             "PIP_NO_INPUT": "1", "PIP_DISABLE_PIP_VERSION_CHECK": "1",
+            # No __pycache__/ or .pytest_cache/ writes in the workspace (team decision
+            # after checkpoint 2; these are not listed as implicit effects instead).
+            "PYTHONDONTWRITEBYTECODE": "1", "PYTEST_ADDOPTS": "-p no:cacheprovider",
             "NO_UPDATE_NOTIFIER": "1", "npm_config_update_notifier": "false",
             "npm_config_fund": "false", "npm_config_audit": "false",
             "npm_config_proxy": proxy, "npm_config_https_proxy": proxy,

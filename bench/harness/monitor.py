@@ -32,6 +32,12 @@ Event rules (documented for the oracle and the paper appendix):
   workspace are dropped. Emitted paths are workspace-relative POSIX.
 * Duplicates (same event, path, op and exe) within one command are reported
   once, at their first occurrence.
+* ``exe`` (on fs events, and on ``proc_exec`` under IC-2) is the path given to
+  ``execve`` made absolute against the process's cwd and normalised
+  lexically: symlinks are *not* resolved (``/usr/bin/python3``, not
+  ``/usr/bin/python3.13``), so it is the file the process asked to run and
+  does not depend on the machine that parses the log. A workspace script
+  shows as ``<workspace>/scripts/x.sh``.
 * ``pid``/``ppid`` are the traced process ids (thread ids mapped to their
   process); the command's top shell has ``ppid`` 0.
 """
@@ -316,7 +322,13 @@ class StraceParser:
         d, b = os.path.split(p)
         return os.path.join(os.path.realpath(d), b) if b else os.path.realpath(p)
 
-    def _resolve(self, pid: int, dirfd_tok: str | None, path: str | None, follow: bool) -> str | None:
+    def _resolve(self, pid: int, dirfd_tok: str | None, path: str | None, follow: bool | None) -> str | None:
+        """Absolute path of a syscall's path argument.
+
+        ``follow=True``: symlinks resolved; ``False``: only the parent's symlinks
+        resolved (ops on a link itself); ``None``: lexical only (no file system
+        access, so the result does not depend on the machine that parses the log).
+        """
         if path is None:
             return None
         if not os.path.isabs(path):
@@ -333,6 +345,8 @@ class StraceParser:
                 return None
             path = os.path.join(base, path)
         path = os.path.normpath(path)
+        if follow is None:
+            return path
         return os.path.realpath(path) if follow else self._real_parent(path)
 
     def _cwd(self, pid: int) -> str:
@@ -414,10 +428,10 @@ class StraceParser:
             try:
                 if n in ("execve", "execveat"):
                     if n == "execve":
-                        path = self._resolve(pid, None, parse_string(a[0]), True)
+                        path = self._resolve(pid, None, parse_string(a[0]), None)
                         argv = parse_str_array(a[1]) or []
                     else:
-                        path = self._resolve(pid, a[0], parse_string(a[1]), True)
+                        path = self._resolve(pid, a[0], parse_string(a[1]), None)
                         argv = parse_str_array(a[2]) or []
                     if path:
                         self.exe[pid] = path
@@ -425,7 +439,8 @@ class StraceParser:
                     if key not in seen:
                         seen.add(key)
                         res.events.append({"event": "proc_exec", "argv": argv, "pid": pid,
-                                           "ppid": 0 if pid == proc(root) else self.parent.get(pid, 0)})
+                                           "ppid": 0 if pid == proc(root) else self.parent.get(pid, 0),
+                                           "exe": path})   # IC-2 field; stripped unless IC-2 is on
                 elif n == "chdir":
                     p = self._resolve(pid, None, parse_string(a[0]), True)
                     if p:
@@ -567,6 +582,17 @@ def diff_snapshots(before: Snapshot, after: Snapshot) -> list[dict[str, Any]]:
 # Monitored command execution
 # --------------------------------------------------------------------------
 
+IC2_EXTRA_FIELDS = {"proc_exec": ("exe",)}
+
+
+def strip_ic2(ev: dict[str, Any]) -> dict[str, Any]:
+    """Drop fields that only exist under the pending IC-2."""
+    extra = IC2_EXTRA_FIELDS.get(ev.get("event", ""))
+    if not extra:
+        return ev
+    return {k: v for k, v in ev.items() if k not in extra}
+
+
 @dataclass
 class MonitoredResult:
     result: Any                                   # sandbox.CommandResult
@@ -580,13 +606,15 @@ class CommandMonitor:
 
     ``observer``: ``"auto"`` (strace if it works inside the sandbox, else
     none), ``"strace"`` (raise if unavailable) or ``"none"``.
-    ``emit_net_connect``: also put ``net_connect`` events in ``events``
-    (pending IC-2; keep False until approved).
+    ``ic2``: pending interface change IC-2 (keep False until approved). When
+    True, ``net_connect`` events go into ``events`` and ``proc_exec`` keeps its
+    ``exe`` field; when False, both are left out so the trace stays D6-valid
+    (connects are still collected in ``MonitoredResult.connects``).
     """
 
-    def __init__(self, sandbox, observer: str = "auto", emit_net_connect: bool = False):
+    def __init__(self, sandbox, observer: str = "auto", ic2: bool = False):
         self.sb = sandbox
-        self.emit_net_connect = emit_net_connect
+        self.ic2 = ic2
         self.strace_args: list[str] = STRACE_ARGS
         if observer not in ("auto", "strace", "none"):
             raise ValueError(f"observer {observer!r}")
@@ -633,11 +661,12 @@ class CommandMonitor:
             try:
                 with log.open(errors="replace") as fh:
                     parsed = StraceParser(ws, ws, set(before), self.sb.proxy_inside()).parse(fh)
-                events += parsed.events
                 connects = parsed.connects
                 problems += parsed.problems
-                if self.emit_net_connect:
-                    events += connects
+                if self.ic2:
+                    events += parsed.events + connects
+                else:
+                    events += [strip_ic2(e) for e in parsed.events]
             except OSError as e:
                 problems.append(f"strace log unreadable: {e}")
         else:

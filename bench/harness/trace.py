@@ -29,14 +29,20 @@ EVENT_FIELDS: dict[str, tuple[str, ...]] = {
     "fs_diff": ("path", "change"),
     "policy_decision": ("phase", "policy", "decision", "from_version", "to_version", "reason"),
     "run_end": ("reason", "steps"),
-    # pending IC-2; only written when the harness is told to (emit_net_connect)
+}
+
+# Pending interface change IC-2 (bench/INTERFACE_CHANGES.md): a new event and a
+# new proc_exec field. Accepted only by TraceWriter(ic2=True); off until approved.
+IC2_EVENT_FIELDS: dict[str, tuple[str, ...]] = {
     "net_connect": ("family", "addr", "port", "pid", "exe", "result"),
+    "proc_exec": ("argv", "pid", "ppid", "exe"),
 }
 
 
 class TraceWriter:
-    def __init__(self, path: Path, t0: float | None = None):
+    def __init__(self, path: Path, t0: float | None = None, ic2: bool = False):
         self.path = Path(path)
+        self.fields = {**EVENT_FIELDS, **(IC2_EVENT_FIELDS if ic2 else {})}
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._fh = self.path.open("w", encoding="utf-8")
         self.t0 = time.monotonic() if t0 is None else t0
@@ -59,9 +65,9 @@ class TraceWriter:
         return self._write({"tool": tool, "args": args, "status": status, **extra})
 
     def event(self, event: str, **fields: Any) -> dict[str, Any]:
-        if event not in EVENT_FIELDS:
+        if event not in self.fields:
             raise ValueError(f"unknown event {event!r}")
-        allowed = EVENT_FIELDS[event]
+        allowed = self.fields[event]
         extra = set(fields) - set(allowed)
         if extra:
             raise ValueError(f"{event}: fields {sorted(extra)} not in D6")

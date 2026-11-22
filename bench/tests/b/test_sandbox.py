@@ -171,6 +171,23 @@ def test_environment_is_clean(mode, tmp_path, monkeypatch):
         for k in ("HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy"):
             assert env[k].startswith("http://127.0.0.1:")
         assert env["NO_PROXY"] == "" and env["no_proxy"] == ""
+        assert env["PYTHONDONTWRITEBYTECODE"] == "1"
+        assert env["PYTEST_ADDOPTS"] == "-p no:cacheprovider"
+
+
+@pytest.mark.parametrize("mode", MODES)
+def test_no_python_caches_in_workspace(mode, tmp_path):
+    root = REPOS / "orders-api"
+    with make_sandbox(root, "http://127.0.0.1:9", isolation=mode, work_root=tmp_path) as sb:
+        sb.build(repo_install_set(root))
+        (sb.workspace / "reports/m.py").write_text("X = 1\n")
+        (sb.workspace / "reports/test_m.py").write_text("from m import X\n\ndef test_x():\n    assert X == 1\n")
+        r = sb.run("python3 -c 'import sys; sys.path.insert(0, \"reports\"); import m'")
+        assert r.exit == 0, r.stderr
+        r = sb.run("cd reports && python3 -m pytest -q test_m.py")
+        assert r.exit == 0, r.stdout + r.stderr
+        made = [p for p in sb.workspace.rglob("*") if p.name in ("__pycache__", ".pytest_cache")]
+        assert made == []
 
 
 @pytest.mark.parametrize("mode", MODES)

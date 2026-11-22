@@ -12,7 +12,7 @@ from bench.harness.monitor import (
     StraceParser, c_unescape, diff_snapshots, fd_annotation, iter_syscalls, parse_sockaddr,
     snapshot, split_args,
 )
-from bench.harness.trace import EVENT_FIELDS, MockLogTailer, TraceWriter
+from bench.harness.trace import EVENT_FIELDS, IC2_EVENT_FIELDS, MockLogTailer, TraceWriter
 
 # Written in the format of `strace -f -qq -v -y -s 4096 -e signal=none` (strace 6.x).
 # WS is replaced by the test workspace's real path; OUT by a directory outside it.
@@ -102,6 +102,22 @@ def test_proc_exec(ws):
     assert execs[0]["ppid"] == 0
     assert execs[1]["pid"] == 101 and execs[1]["ppid"] == 100
     assert execs[2]["pid"] == 103 and execs[2]["ppid"] == 100
+    # exe (IC-2 field): absolute, lexically normalised, never symlink-resolved, so the
+    # result is the same on any machine (/usr/bin/python3 is a symlink on most Linux hosts)
+    assert [e["exe"] for e in execs] == ["/bin/sh", "/usr/bin/python3",
+                                         f"{ws[0]}/scripts/privileged.sh"]
+
+
+def test_exe_is_not_symlink_resolved(tmp_path):
+    ws = tmp_path / "w"
+    ws.mkdir()
+    (tmp_path / "real-tool").write_text("")
+    os.symlink(tmp_path / "real-tool", ws / "tool")
+    log = [f'1 execve("./tool", ["./tool"], []) = 0',
+           f'1 openat(AT_FDCWD, "a.txt", O_WRONLY|O_CREAT, 0644) = 3<{ws.resolve()}/a.txt>']
+    r = StraceParser(ws.resolve(), ws.resolve(), set(), None).parse(log)
+    assert r.events[0]["exe"] == f"{ws.resolve()}/tool"
+    assert r.events[1]["exe"] == f"{ws.resolve()}/tool"
 
 
 def test_reads(ws):
@@ -135,7 +151,8 @@ def test_writes(ws):
     assert thread_write["pid"] == 103                     # thread 104 mapped to its process
     assert thread_write["exe"].endswith("scripts/privileged.sh")
     for e in r.events:
-        assert set(e) == {"event", *EVENT_FIELDS[e["event"]]}
+        fields = IC2_EVENT_FIELDS if e["event"] == "proc_exec" else EVENT_FIELDS
+        assert set(e) == {"event", *fields[e["event"]]}
 
 
 def test_connects(ws):
@@ -146,7 +163,7 @@ def test_connects(ws):
                    ("inet6", "2606:2800:220:1::", 80, "ENETUNREACH"),
                    ("inet", "10.0.0.2", 53, "ENETUNREACH")]
     for c in r.connects:
-        assert set(c) == {"event", *EVENT_FIELDS["net_connect"]}
+        assert set(c) == {"event", *IC2_EVENT_FIELDS["net_connect"]}
     # a different proxy address makes the 127.0.0.1:3128 connect a non-proxy one
     r2 = _parse(*ws, proxy=("127.0.0.1", 9999))
     assert ("inet", "127.0.0.1", 3128, "ok") in [(c["family"], c["addr"], c["port"], c["result"]) for c in r2.connects]
@@ -200,3 +217,18 @@ def test_trace_writer_and_mock_tailer(tmp_path):
     assert lines[2]["url"] == "http://b.example/x" and lines[2]["served"] is True
     assert all(l["t"] >= 0 for l in lines)
     assert tail.bad == ["not json"]
+
+
+def test_trace_writer_gates_ic2(tmp_path):
+    nc = dict(family="inet", addr="192.0.2.1", port=80, pid=1, exe="/bin/x", result="ENETUNREACH")
+    with TraceWriter(tmp_path / "a.jsonl") as tw:
+        with pytest.raises(ValueError):
+            tw.event("net_connect", **nc)
+        with pytest.raises(ValueError):
+            tw.event("proc_exec", argv=["x"], pid=1, ppid=0, exe="/bin/x")
+        tw.event("proc_exec", argv=["x"], pid=1, ppid=0)
+    with TraceWriter(tmp_path / "b.jsonl", ic2=True) as tw:
+        tw.event("net_connect", **nc)
+        tw.event("proc_exec", argv=["x"], pid=1, ppid=0, exe="/bin/x")
+    lines = [json.loads(l) for l in (tmp_path / "b.jsonl").read_text().splitlines()]
+    assert lines[1]["exe"] == "/bin/x"

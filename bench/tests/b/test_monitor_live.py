@@ -113,9 +113,12 @@ def test_connects_outside_proxy_are_recorded(mon, proxy):
     if mon.sb.isolation != "env":
         assert all(c["result"] != "ok" for c in r.connects)
     assert not _of(r.events, "net_connect")                    # pending IC-2
-    mon.emit_net_connect = True
+    assert all("exe" not in e for e in _of(r.events, "proc_exec"))
+    mon.ic2 = True
     r = mon.run("python3 reports/c.py")
     assert _of(r.events, "net_connect")
+    py = [e for e in _of(r.events, "proc_exec") if e["argv"][:1] == ["python3"]]
+    assert py and os.path.isabs(py[0]["exe"]) and os.path.basename(py[0]["exe"]).startswith("python")
 
 
 def test_full_trace_lines_follow_d6(mon, tmp_path, proxy):

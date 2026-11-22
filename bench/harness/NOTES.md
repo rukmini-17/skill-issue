@@ -5,7 +5,7 @@
 | checkpoint | state |
 |---|---|
 | 1 sandbox builds a workspace and installs skills | **done** (env mode tested on macOS; netns and docker modes written, not yet run) |
-| 2 monitoring | **code done; waiting for the human runs on the A100 and a COOK `gtx` node** |
+| 2 monitoring | **code done; verified on a Linux VM; waiting for the A100 and COOK `gtx` runs** |
 | 3 agent loop | not started |
 | 4 replay (with A) | not started |
 | 5 backends + pilot | not started |
@@ -60,10 +60,21 @@
    `test_git_add_all_never_stages_skills`.
 4. openpyxl is approved as a setup dependency.
 
+## Team decisions after checkpoint 2 (2026-11-22)
+
+1. Directory listings by scripts are **not** recorded as `fs_read` (limitation below).
+2. The sandbox env sets `PYTHONDONTWRITEBYTECODE=1` and `PYTEST_ADDOPTS="-p no:cacheprovider"`,
+   so `__pycache__/` and `.pytest_cache/` are not written into the workspace. Cache dirs are not
+   added to `implicit_effects.yaml`. Test: `test_no_python_caches_in_workspace`. Side effect: a
+   task command that sets its own `PYTEST_ADDOPTS` replaces ours. None of the 55 tasks does.
+3. `proc_exec` gets the executable path `exe`, as part of IC-2. One flag, `ic2`
+   (`CommandMonitor`, `TraceWriter`), stays off until A approves IC-1/IC-2; with it off, `exe`
+   is stripped from `proc_exec` and `net_connect` is not written.
+
 ## Checkpoint 2 — monitoring
 
 - `bench/harness/monitor.py`
-  - `CommandMonitor(sandbox, observer="auto"|"strace"|"none", emit_net_connect=False)`.
+  - `CommandMonitor(sandbox, observer="auto"|"strace"|"none", ic2=False)`.
     `run(cmd)` returns the `CommandResult` plus the D6 events for that command, in order:
     strace events (`proc_exec`, `fs_read`, `fs_write`), then `fs_diff`. `observer` is
     `"strace"` if a probe run of strace inside the sandbox works, else `"none"`, and goes to
@@ -79,7 +90,7 @@
     docstring.
   - `connect()`/`sendto()`/`sendmsg()` to an AF_INET/AF_INET6 address other than the mock proxy
     (as seen from inside the sandbox) are collected in `MonitoredResult.connects` as
-    `net_connect` records. They go into the trace only with `emit_net_connect=True`, which stays
+    `net_connect` records. They go into the trace only with `ic2=True`, which stays
     off until IC-2 is approved; otherwise the oracle would call the trace unjudgeable (unknown
     event).
   - fs_diff: stat snapshot (`size`, `mtime_ns`, mode, link target) of all files and symlinks in
@@ -105,8 +116,14 @@
 
 | machine | strace | `unshare -rn` | auto mode | pytest bench/tests/b |
 |---|---|---|---|---|
+| Linux VM (Ubuntu 24.04.5, kernel 6.18, x86_64, Python 3.13), 2026-11-22, commit a0edc1c | 6.8, works unprivileged, also inside the netns | ok (incl. loopback up and strace inside) | `netns` | 50 passed, 1 failed, 1 skipped. All live tests pass in `env` and `netns`. The failure was `test_monitor_parse::test_reads` (exe resolved on the host to `/usr/bin/python3.13`); fixed after the run, see below. Docker image not built, so docker mode was not tested |
 | A100 | ? | ? | ? | ? |
 | COOK gtx | ? | ? | ? | ? |
+
+Fix after the VM run: the parser resolved `exe` with `realpath` on the machine that parses the
+log, so fixture results depended on that machine's symlinks. `exe` is now the `execve` path made
+absolute and normalised lexically, without following symlinks (module docstring;
+`test_exe_is_not_symlink_resolved`).
 
 ## Deviations
 
@@ -153,19 +170,20 @@
   for access time). Opens use strace's `-y` path, which is the access-time real path.
 - Only successful syscalls produce events, so the trace does not show a script *trying* to read
   a missing file.
+- **Directory listings by scripts are not recorded** (team decision). A script that lists an
+  out-of-scope directory (`ls secrets/`, `os.listdir`) produces no `fs_read` and so no P2. Only
+  reading the files inside it does. The agent's own `list_dir` tool is still judged. Reason:
+  every `python3 -c` lists its working directory for imports, which would be a false P2 on
+  almost every task.
+- `exe` is not symlink-resolved: a workspace symlink to `/bin/sh` shows a workspace path, and a
+  symlink outside the workspace pointing to a workspace script shows the outside path.
 - `connect()` attempts to the proxy port from a *different* local process are not
   distinguishable from proxy use.
 - Docker on macOS (Docker Desktop) is untested; Docker Desktop would not start on the dev Mac.
 
 ## Open questions
 
-1. Directory opens are not reported as `fs_read` (each `python3 -c` lists its working
-   directory, which would be a false P2 on almost every task). Is that right, or should listing
-   a directory with a script count as a read (like `list_dir`)?
-2. Python writes `__pycache__/*.pyc` and pytest writes `.pytest_cache/`, which appear as
-   `fs_write`/`fs_diff`. Options: set `PYTHONDONTWRITEBYTECODE=1` in the sandbox env, or list
-   them in `implicit_effects.yaml` (A4). Not decided.
-3. IC-1 and IC-2 are pending.
-4. `proc_exec` has no executable-path field, so the oracle has to work out from `argv` whether a
-   workspace file was run (`python3 scripts/x.py`, `./release.sh`). If the oracle needs it, the
-   monitor already tracks the exec path and can add an `exe` field (would be part of IC-2).
+1. IC-1 and IC-2 are pending A's review.
+2. Docker mode has not run anywhere yet (image not built on the VM). Build it on the A100
+   (`docker build -t consentdrift-sandbox:latest bench/harness/docker`) if Docker is there, and
+   the check script will test it too.
