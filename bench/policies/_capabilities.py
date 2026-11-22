@@ -57,10 +57,20 @@ def file_hashes(version_root: Path) -> dict[str, str]:
 
 
 def glob_regex(pattern: str) -> re.Pattern:
-    """Compile a workspace glob (``*`` = non-slash run, ``**`` = any segments)."""
-    out, i = "", 0
-    while i < len(pattern):
-        if pattern[i:i + 3] == "**/":
+    """Compile a workspace glob (D2).
+
+    ``*`` matches any run of non-slash characters. ``**`` matches zero or more
+    whole path segments. ``dir/**`` matches ``dir`` itself as well as everything
+    under it, so a ``list_dir("dir")`` is covered by a ``dir/**`` grant.
+    """
+    out, i, n = "", 0, len(pattern)
+    while i < n:
+        # "/**" at end of the pattern, or just before a "/": the directory itself
+        # plus any subtree. "dir/**" -> dir(/...)? ; "a/**/b" -> a(/...)?/b
+        if pattern[i:i + 3] == "/**" and (i + 3 == n or pattern[i + 3] == "/"):
+            out += "(?:/.*)?"
+            i += 3
+        elif pattern[i:i + 3] == "**/":
             out += "(?:.*/)?"
             i += 3
         elif pattern[i:i + 2] == "**":
@@ -96,33 +106,93 @@ def gained_entries(new_list, approved_list) -> list[str]:
 
 PY_IMPORT = re.compile(r"^\s*(?:from|import)\s+([A-Za-z_][\w]*)", re.M)
 URL = re.compile(r"[a-z][a-z0-9+]*://([A-Za-z0-9.-]+)[^\s\"'`)]*")
-LITERAL_PATH = re.compile(
-    r"(?<![\w/.-])("
-    r"(?:\.github|app|tests|data|config|scripts|reports|issues|cov_annotate|mock)/[\w./*-]+"
-    r"|\.env[\w.]*"
-    r"|[\w-]+\.(?:yaml|yml|toml|csv|txt|sh|log)"
-    r")(?![\w])"
-)
 CMD_START = re.compile(r"^(python3?|pip3?|pytest|ruff|npm|node|bash|sh|curl|wget|git|chmod|rm|cat|\./)")
 CODE_BLOCK = re.compile(r"```(\w*)\n(.*?)```", re.S)
 
 CAP_KINDS = ("hosts", "paths", "commands", "deps")
 
 
-def capabilities(version_root: Path) -> dict[str, set[str]]:
+def _repo_root_for(version_root: Path) -> Path | None:
+    """Walk up from a version snapshot to the repo root (the dir that holds ``workspace/``)."""
+    for p in [version_root, *version_root.parents]:
+        if (p / "workspace").is_dir():
+            return p
+    return None
+
+
+def repo_top_folders(version_root: Path) -> list[str]:
+    """The repo's recognised top-level folders, read from its ``workspace/`` plus ``.github`` (D12).
+
+    D12 requires path recognition not to depend on a fixed folder list: the list is
+    built per repo from that repo's ``workspace/``. If no workspace is found (e.g. a
+    synthetic unit-test snapshot), fall back to ``.github`` only.
+
+    Known limitation: only entries present in the static ``workspace/`` are listed.
+    Top-level dirs created by ``setup.sh`` or by tools at run time (``node_modules``,
+    ``.ruff_cache``, ``cov_annotate``, …) are not, so a path named only under one of
+    those is not recognised. Documented in NOTES.md.
+    """
+    folders = {".github"}
+    root = _repo_root_for(version_root)
+    if root is not None:
+        folders |= {d.name for d in (root / "workspace").iterdir() if d.is_dir()}
+    return sorted(folders)
+
+
+def repo_top_files(version_root: Path) -> list[str]:
+    """The repo's recognised top-level files, read from its ``workspace/`` (e.g.
+    ``package.json``, ``CHANGELOG.md``, ``.npmrc``, ``requirements.txt``)."""
+    root = _repo_root_for(version_root)
+    if root is None:
+        return []
+    return sorted(f.name for f in (root / "workspace").iterdir() if f.is_file())
+
+
+def _literal_path_re(folders: list[str], files: list[str] | None = None) -> re.Pattern:
+    """A literal-path matcher keyed on this repo's top-level folders and files.
+
+    Matches ``<folder>/<rest>`` for any recognised folder, an exact recognised
+    top-level file, plus ``.env*`` and bare config-ish filenames
+    (``*.yaml``/``*.csv``/``*.sh``/…) that name a file directly.
+    """
+    alt = "|".join(re.escape(f) for f in folders) or r"\.github"
+    file_alt = "|".join(re.escape(f) for f in (files or []))
+    file_branch = rf"|(?:{file_alt})" if file_alt else ""
+    return re.compile(
+        r"(?<![\w/.-])("
+        rf"(?:{alt})/[\w./*-]+"
+        rf"{file_branch}"
+        r"|\.env[\w.]*"
+        r"|[\w-]+\.(?:yaml|yml|toml|csv|txt|sh|log)"
+        r")(?![\w])"
+    )
+
+
+def capabilities(
+    version_root: Path,
+    folders: list[str] | None = None,
+    files: list[str] | None = None,
+) -> dict[str, set[str]]:
     """Extract {hosts, paths, commands, deps} from every file except LICENSE/manifest.json.
 
-    Ported from check_repo.py. Hosts come from URLs, paths from literal workspace
-    paths, commands from bash/sh code blocks, deps from requirements.txt + python
-    imports (stdlib removed).
+    Hosts come from URLs, paths from literal workspace paths (recognised against the
+    repo's own top-level folders and files, D12), commands from bash/sh code blocks,
+    deps from requirements.txt + python imports (stdlib removed). ``folders``/``files``
+    override the per-repo lists (used by the extractor test); otherwise they are
+    derived from the repo's ``workspace/``.
     """
+    if folders is None:
+        folders = repo_top_folders(version_root)
+    if files is None:
+        files = repo_top_files(version_root)
+    literal_path = _literal_path_re(folders, files)
     caps: dict[str, set[str]] = {k: set() for k in CAP_KINDS}
     for f in sorted(version_root.rglob("*")):
         if not f.is_file() or f.name in ("LICENSE", "manifest.json"):
             continue
         text = f.read_text(encoding="utf-8", errors="replace")
         caps["hosts"] |= set(URL.findall(text))
-        caps["paths"] |= set(LITERAL_PATH.findall(text))
+        caps["paths"] |= set(literal_path.findall(text))
         if f.name == "requirements.txt":
             caps["deps"] |= {
                 re.split(r"[<>=\[ ]", l.strip())[0]

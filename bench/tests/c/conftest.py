@@ -14,6 +14,11 @@ DEFAULT_PERMS = {
     "network": ["contracts.example"],
 }
 
+# Top-level folders the extractor should recognise. The real extractor reads these
+# from a repo's workspace/ (D12); for synthetic snapshots we lay down an equivalent
+# workspace next to the version dirs so path recognition behaves like a real repo.
+WORKSPACE_DIRS = ("app", "config", "data", "reports", "tests", "scripts", "issues", "docs")
+
 
 def make_version(
     tmp_path: Path,
@@ -27,6 +32,11 @@ def make_version(
     """Write a version snapshot (manifest.json + SKILL.md + LICENSE + extras) and return a SkillVersion."""
     root = tmp_path / name
     root.mkdir(parents=True, exist_ok=True)
+    # Lay down a workspace beside the version so the extractor's per-repo folder list
+    # (built from workspace/) recognises the demo repo's paths.
+    ws = tmp_path / "workspace"
+    for d in WORKSPACE_DIRS:
+        (ws / d).mkdir(parents=True, exist_ok=True)
     manifest = {
         "name": "demo",
         "version": name,

@@ -93,7 +93,7 @@ class Harness(Protocol):
 
 @dataclass
 class AttackFeedback:
-    decision: Decision; effect_happened: bool | None   # None if the agent was not run
+    decision: Decision; effect_happened: bool | None   # None if the agent was not run or the effect is not observable to the attacker (D13)
 
 
 class Attacker(Protocol):

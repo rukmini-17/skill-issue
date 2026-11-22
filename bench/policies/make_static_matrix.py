@@ -148,6 +148,18 @@ def main():
         pct = (fp / len(b) * 100) if b else 0
         print(f"{n:26} {f'{fp}/{len(b)}  ({pct:.0f}%)':>34}")
 
+    # attack steps by class: how each policy decides on seed-step updates (C2)
+    steps = [r for r in rows if r["kind"] == "seed_step"]
+    classes = sorted({r["class"] for r in steps if r["class"]})
+    print(f"\nattack seed-step decisions (allow/ask/deny) by class:")
+    print(f"{'policy':26} " + " ".join(f"{c:>22}" for c in classes))
+    for n, _ in policies:
+        cells = []
+        for c in classes:
+            cc = Counter(r["decision"] for r in steps if r["policy"] == n and r["class"] == c)
+            cells.append(f"{cc['allow']}/{cc['ask']}/{cc['deny']}")
+        print(f"{n:26} " + " ".join(f"{cell:>22}" for cell in cells))
+
 
 if __name__ == "__main__":
     main()

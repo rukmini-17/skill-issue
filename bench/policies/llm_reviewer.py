@@ -75,7 +75,7 @@ class LLMReviewerPolicy:
     def __init__(
         self,
         complete: Completion | None = None,
-        model: str = "qwen3-largest",
+        model: str = "Qwen3-32B",
         cache_dir: Path | None = None,
         prompt_path: Path = _PROMPT_PATH,
     ):
