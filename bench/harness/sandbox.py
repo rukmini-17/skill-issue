@@ -288,12 +288,25 @@ class Sandbox:
         self.built = BuildInfo(self.workspace, self.isolation, setup, skills)
         return self.built
 
-    def run(self, cmd: str, timeout: float | None = None) -> CommandResult:
-        """Run a shell command with the workspace as working directory."""
+    def run(self, cmd: str, timeout: float | None = None, prefix: list[str] | None = None) -> CommandResult:
+        """Run a shell command with the workspace as working directory.
+
+        ``prefix`` is prepended inside the sandbox (the monitor passes ``strace ...``).
+        """
         if self.built is None:
             raise SandboxError("build() first")
-        return self._exec(["/bin/sh", "-c", cmd], cwd=self.workspace,
+        return self._exec([*(prefix or []), "/bin/sh", "-c", cmd], cwd=self.workspace,
                           timeout=self.command_timeout if timeout is None else timeout, label=cmd)
+
+    def proxy_inside(self) -> tuple[str, int]:
+        """(address, port) of the mock proxy as commands inside the sandbox see it."""
+        u = urlsplit(self._inner_proxy_url())
+        return u.hostname or "", u.port or 0
+
+    def new_run_file(self, suffix: str) -> Path:
+        """A fresh file path in the stage's run/ dir (outside the workspace, visible inside)."""
+        self._n += 1
+        return self.rundir / f"{self._n:04d}{suffix}"
 
     def env(self) -> dict[str, str]:
         """The environment every command gets (clean; no host secrets)."""
@@ -358,9 +371,13 @@ class Sandbox:
         t0 = time.monotonic()
         timed_out = False
         with out_p.open("wb") as out, err_p.open("wb") as err:
-            proc = subprocess.Popen(full, cwd=cwd, env=self.env() if self._pass_env() else self._host_env(),
-                                    stdin=subprocess.DEVNULL, stdout=out, stderr=err,
-                                    start_new_session=True)
+            try:
+                proc = subprocess.Popen(full, cwd=cwd, env=self.env() if self._pass_env() else self._host_env(),
+                                        stdin=subprocess.DEVNULL, stdout=out, stderr=err,
+                                        start_new_session=True)
+            except OSError as e:                 # e.g. the monitor's strace prefix is not installed
+                return CommandResult(label, 127, "", f"{full[0]}: {e.strerror}", False,
+                                     time.monotonic() - t0, 0, len(e.strerror or ""))
             try:
                 rc = proc.wait(timeout=host_timeout)
             except subprocess.TimeoutExpired:

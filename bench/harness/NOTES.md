@@ -5,7 +5,7 @@
 | checkpoint | state |
 |---|---|
 | 1 sandbox builds a workspace and installs skills | **done** (env mode tested on macOS; netns and docker modes written, not yet run) |
-| 2 monitoring | not started |
+| 2 monitoring | **code done; waiting for the human runs on the A100 and a COOK `gtx` node** |
 | 3 agent loop | not started |
 | 4 replay (with A) | not started |
 | 5 backends + pilot | not started |
@@ -46,6 +46,68 @@
 - Tests: `bench/tests/b/test_sandbox.py` (18 pass, 1 skipped on macOS; netns/docker cases are
   parametrised in automatically where available).
 
+## Team decisions after checkpoint 1 (2026-11-22)
+
+1. `env` isolation is allowed only for benign/pilot runs; attack runs require `netns` or
+   `docker`. Implemented as `make_sandbox(..., require_network_isolation=True)`, which raises
+   `SandboxError` if the mode would be `env`; the runner (D) passes it for attack runs. Also:
+   record `connect()` in strace and emit non-proxy connects as events (see checkpoint 2 and
+   IC-2); test `unshare -rn` on COOK (in the check script).
+2. shop-web's mock files: proposal IC-1 in `bench/INTERFACE_CHANGES.md` (optional `mock_root`
+   for `MockNetwork.start`). Not implemented until approved.
+3. After installing skills, `.github/skills/` is appended to `.git/info/exclude` when the
+   workspace is a git repo (only release-tools after setup). Test:
+   `test_git_add_all_never_stages_skills`.
+4. openpyxl is approved as a setup dependency.
+
+## Checkpoint 2 — monitoring
+
+- `bench/harness/monitor.py`
+  - `CommandMonitor(sandbox, observer="auto"|"strace"|"none", emit_net_connect=False)`.
+    `run(cmd)` returns the `CommandResult` plus the D6 events for that command, in order:
+    strace events (`proc_exec`, `fs_read`, `fs_write`), then `fs_diff`. `observer` is
+    `"strace"` if a probe run of strace inside the sandbox works, else `"none"`, and goes to
+    meta.json. A run with `"none"` still gets `fs_diff`.
+  - strace: `strace -f -qq -v -y -s 4096 -e signal=none -e trace=%file,%process,connect,sendto,
+    sendmsg,fchdir,ftruncate,fchmod -o <stage>/run/NNNN.strace`, run *inside* the sandbox (inside
+    the netns / container) around `/bin/sh -c <cmd>`. If the `%` class syntax is rejected, the
+    probe falls back to the pre-4.17 class names.
+  - The parser joins `<unfinished ...>`/`resumed` lines, rebuilds the process tree from
+    `clone`/`clone3`/`fork`/`vfork` (threads map to their process), tracks cwd (`chdir`/`fchdir`,
+    inherited by children) and the current executable (`execve`). The event rules (successful
+    syscalls only, no directory opens, how paths are resolved, dedup) are in the module
+    docstring.
+  - `connect()`/`sendto()`/`sendmsg()` to an AF_INET/AF_INET6 address other than the mock proxy
+    (as seen from inside the sandbox) are collected in `MonitoredResult.connects` as
+    `net_connect` records. They go into the trace only with `emit_net_connect=True`, which stays
+    off until IC-2 is approved; otherwise the oracle would call the trace unjudgeable (unknown
+    event).
+  - fs_diff: stat snapshot (`size`, `mtime_ns`, mode, link target) of all files and symlinks in
+    the workspace before and after the command; `created`/`modified`/`deleted`. No content
+    hashing, so a `touch` counts as `modified`. Directories are not listed.
+- `bench/harness/trace.py`: `TraceWriter` (one `seq` counter, `t` since run start, flush per line,
+  rejects unknown events and fields outside D6) and `MockLogTailer` (incrementally reads the mock
+  log, keeps the D6 `net_observed` fields, keeps a partial last line for the next drain, collects
+  unparseable lines in `.bad`).
+- `Sandbox.run(cmd, prefix=...)` runs the monitor's strace prefix inside the sandbox; a missing
+  program returns exit 127 instead of raising.
+- Tests: `test_monitor_parse.py` (fixture strace log covering exec/PATH lookup failures,
+  unfinished/resumed, threads, chdir, rename/unlinkat/renameat2 with escaped names, symlink
+  escape, AF_INET/AF_INET6/AF_UNIX connects, DNS sendto) runs everywhere.
+  `test_monitor_live.py` runs on Linux in every available mode, including the acceptance test
+  "a script reads `.env` produces `fs_read`". On macOS the live tests skip.
+- Machine checks: `bench/harness/scripts/check_monitoring.sh` (prints strace version, ptrace and
+  userns sysctls, `unshare -rn` tests incl. strace inside the netns, Docker status, the mode
+  `auto` picks, then `pytest bench/tests/b -v -rs`; writes `runs/checks/monitoring-<host>-<ts>.txt`)
+  and `bench/harness/slurm/check_monitoring_gtx.sbatch` (COOK `gtx`, 20 min, CPU only).
+
+### Results on the machines (to fill in)
+
+| machine | strace | `unshare -rn` | auto mode | pytest bench/tests/b |
+|---|---|---|---|---|
+| A100 | ? | ? | ? | ? |
+| COOK gtx | ? | ? | ? | ? |
+
 ## Deviations
 
 - `bench/interfaces.py` and `bench/__init__.py` were checked out unchanged from
@@ -81,7 +143,29 @@
   `git status`. A task that runs `git add -A` would stage them; relevant for A4 / implicit
   effects.
 
+## Known weaknesses (checkpoint 2)
+
+- The strace parser has been tested only against a hand-written log in strace 6.x format;
+  nothing has run under real strace yet (no Linux available during development). The live
+  tests on the A100/COOK are the real check.
+- Paths of non-open syscalls are resolved at parse time (after the command). A symlink created
+  and removed within one command can make that resolution differ from access time (D2 asks
+  for access time). Opens use strace's `-y` path, which is the access-time real path.
+- Only successful syscalls produce events, so the trace does not show a script *trying* to read
+  a missing file.
+- `connect()` attempts to the proxy port from a *different* local process are not
+  distinguishable from proxy use.
+- Docker on macOS (Docker Desktop) is untested; Docker Desktop would not start on the dev Mac.
+
 ## Open questions
 
-1. Is `env` isolation acceptable for COOK runs if user namespaces are unavailable there?
-2. Who builds shop-web's mock tarballs for the mock server (see above)?
+1. Directory opens are not reported as `fs_read` (each `python3 -c` lists its working
+   directory, which would be a false P2 on almost every task). Is that right, or should listing
+   a directory with a script count as a read (like `list_dir`)?
+2. Python writes `__pycache__/*.pyc` and pytest writes `.pytest_cache/`, which appear as
+   `fs_write`/`fs_diff`. Options: set `PYTHONDONTWRITEBYTECODE=1` in the sandbox env, or list
+   them in `implicit_effects.yaml` (A4). Not decided.
+3. IC-1 and IC-2 are pending.
+4. `proc_exec` has no executable-path field, so the oracle has to work out from `argv` whether a
+   workspace file was run (`python3 scripts/x.py`, `./release.sh`). If the oracle needs it, the
+   monitor already tracks the exec path and can add an `exe` field (would be part of IC-2).

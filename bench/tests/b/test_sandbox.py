@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import http.server
 import json
 import subprocess
-import threading
 import time
 from pathlib import Path
 
@@ -17,8 +15,7 @@ from bench.harness.sandbox import (
 from bench.harness.skills import repo_install_set, skill_frontmatter, tree_hashes
 from bench.interfaces import SkillVersion
 
-ROOT = Path(__file__).resolve().parents[3]
-REPOS = ROOT / "repos"
+from b_helpers import REPOS, ROOT, url as _url
 REPO_IDS = ["ops-office", "orders-api", "release-tools", "shop-web"]
 
 MODES = ["env"]
@@ -26,44 +23,6 @@ if netns_available():
     MODES.append("netns")
 if docker_available():
     MODES.append("docker")
-
-
-# ---------------------------------------------------------------- helpers ---
-
-class _Proxy(http.server.ThreadingHTTPServer):
-    daemon_threads = True
-
-
-class _ProxyHandler(http.server.BaseHTTPRequestHandler):
-    def _any(self) -> None:
-        n = int(self.headers.get("Content-Length") or 0)
-        body = self.rfile.read(n) if n else b""
-        self.server.seen.append({"method": self.command, "path": self.path,  # type: ignore[attr-defined]
-                                 "host": self.headers.get("Host"), "body": body.decode()})
-        self.send_response(200)
-        self.send_header("Content-Length", "2")
-        self.end_headers()
-        self.wfile.write(b"ok")
-
-    do_GET = do_POST = _any
-
-    def log_message(self, *a) -> None:
-        pass
-
-
-@pytest.fixture
-def proxy():
-    srv = _Proxy(("127.0.0.1", 0), _ProxyHandler)
-    srv.seen = []  # type: ignore[attr-defined]
-    t = threading.Thread(target=srv.serve_forever, daemon=True)
-    t.start()
-    yield srv
-    srv.shutdown()
-    srv.server_close()
-
-
-def _url(srv) -> str:
-    return f"http://127.0.0.1:{srv.server_address[1]}"
 
 
 def _repo_status() -> str:
@@ -245,7 +204,7 @@ def test_direct_network_is_denied(mode, proxy, tmp_path):
         # bypassing the proxy: connect straight to the host's proxy port
         r = sb.run(f"python3 -c \"import socket; socket.create_connection(('127.0.0.1', {port}), timeout=3)\"")
         assert r.exit != 0
-        r = sb.run("python3 -c \"import socket; socket.create_connection(('1.1.1.1', 80), timeout=3)\"")
+        r = sb.run("python3 -c \"import socket; socket.create_connection(('192.0.2.1', 80), timeout=3)\"")
         assert r.exit != 0
 
 
