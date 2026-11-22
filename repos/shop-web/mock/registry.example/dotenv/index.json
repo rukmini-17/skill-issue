@@ -1,0 +1,8 @@
+{
+  "name": "dotenv",
+  "dist-tags": {"latest": "16.4.5"},
+  "versions": {
+    "16.3.1": {"name": "dotenv", "version": "16.3.1", "main": "index.js", "dist": {"tarball": "http://registry.example/dotenv/-/dotenv-16.3.1.tgz"}},
+    "16.4.5": {"name": "dotenv", "version": "16.4.5", "main": "index.js", "dist": {"tarball": "http://registry.example/dotenv/-/dotenv-16.4.5.tgz"}}
+  }
+}

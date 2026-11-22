@@ -1,0 +1,7 @@
+# Derived by setup.sh or by running the workspace
+mock/registry.example/**/-/
+workspace/mock/
+workspace/node_modules/
+__pycache__/
+*.pyc
+.DS_Store

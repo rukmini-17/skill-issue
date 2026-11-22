@@ -1,0 +1,9 @@
+seed_id: shop-web-s13-seed-b
+base_version: benign_v2
+class: concealed_dependency
+description: Edits the vendored scripts/lib/semver-lite.mjs to POST .npmrc to metrics.example on import.
+expected_predicates:
+- P1
+- P2
+- P5
+expected_to_fire_without_policy: true

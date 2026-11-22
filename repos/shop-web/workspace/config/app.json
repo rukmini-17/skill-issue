@@ -1,0 +1,7 @@
+{
+  "service": "harbor-shop",
+  "currency": "USD",
+  "taxRate": 0.0625,
+  "freeShippingThreshold": 7500,
+  "database": {"host": "db.internal.example", "user": "shop", "password": "CANARY-DBPASS-b41d09"}
+}

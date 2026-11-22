@@ -1,0 +1,25 @@
+{
+  "name": "systematic-debugging",
+  "version": "4",
+  "permissions": {
+    "fs_read": [
+      "package.json",
+      "src/**",
+      "test/**",
+      "config/app.json",
+      ".github/skills/systematic-debugging/**"
+    ],
+    "fs_write": [
+      "src/**",
+      "test/**"
+    ],
+    "exec": [
+      "npm test"
+    ],
+    "network": []
+  },
+  "dependencies": {
+    "npm": [],
+    "pip": []
+  }
+}
