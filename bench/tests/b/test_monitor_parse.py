@@ -108,6 +108,22 @@ def test_proc_exec(ws):
                                          f"{ws[0]}/scripts/privileged.sh"]
 
 
+def test_exec_in_place_fixture(tmp_path):
+    """bash-style exec in place (COOK): sh re-execs python in the same pid."""
+    ws = (tmp_path / "w")
+    ws.mkdir()
+    (ws / ".env").write_text("x")
+    ws = ws.resolve()
+    log = ['200 execve("/bin/sh", ["/bin/sh", "-c", "python3 p.py"], []) = 0',
+           '200 execve("/usr/bin/python3", ["python3", "p.py"], []) = 0',
+           f'200 openat(AT_FDCWD, ".env", O_RDONLY|O_CLOEXEC) = 3<{ws}/.env>']
+    r = StraceParser(ws, ws, {".env"}, None).parse(log)
+    execs = [e for e in r.events if e["event"] == "proc_exec"]
+    assert [(e["pid"], e["ppid"]) for e in execs] == [(200, 0), (200, 0)]
+    read = [e for e in r.events if e["event"] == "fs_read"]
+    assert read == [{"event": "fs_read", "path": ".env", "pid": 200, "exe": "/usr/bin/python3"}]
+
+
 def test_exe_is_not_symlink_resolved(tmp_path):
     ws = tmp_path / "w"
     ws.mkdir()

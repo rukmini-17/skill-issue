@@ -5,7 +5,7 @@
 | checkpoint | state |
 |---|---|
 | 1 sandbox builds a workspace and installs skills | **done** (env mode tested on macOS; netns and docker modes written, not yet run) |
-| 2 monitoring | **code done; verified on a Linux VM; waiting for the A100 and COOK `gtx` runs** |
+| 2 monitoring | **code done; green on the VM and Colab/A100 image; COOK test fix pushed, waiting for the COOK rerun** |
 | 3 agent loop | not started |
 | 4 replay (with A) | not started |
 | 5 backends + pilot | not started |
@@ -117,8 +117,17 @@
 | machine | strace | `unshare -rn` | auto mode | pytest bench/tests/b |
 |---|---|---|---|---|
 | Linux VM (Ubuntu 24.04.5, kernel 6.18, x86_64, Python 3.13), 2026-11-22, commit a0edc1c | 6.8, works unprivileged, also inside the netns | ok (incl. loopback up and strace inside) | `netns` | 50 passed, 1 failed, 1 skipped. All live tests pass in `env` and `netns`. The failure was `test_monitor_parse::test_reads` (exe resolved on the host to `/usr/bin/python3.13`); fixed after the run, see below. Docker image not built, so docker mode was not tested |
-| A100 | ? | ? | ? | ? |
-| COOK gtx | ? | ? | ? | ? |
+| A100 / Colab (same image as the A100 runtime, CPU runtime), 2026-11-22, commit d6c03fe | works, also inside the netns | ok | `netns` | 55 passed, 1 skipped, exit 0 |
+| COOK `gtx` (AlmaLinux 9.7, strace 6.12, Python 3.13.15 via module `llm-r580/2026.09`), 2026-11-22, commit d6c03fe | works | ok | `netns` | 51 passed, 4 failed, 1 skipped. Failures: `test_script_reading_env_produces_fs_read` and `test_child_runs_workspace_script`, `[env]` and `[netns]`. The read/write/network checks all passed; the only failing asserts were `ppid != 0` on `proc_exec`. Root cause: COOK's `sh` (bash) execs the last simple command of `sh -c` in place, so `python3 x.py` / `./x.sh` *is* the traced root and correctly has `ppid` 0; Ubuntu's dash forks. A test assumption, not a monitoring bug. A real fork (`subprocess.run`) was confirmed by hand to give a distinct child pid. Tests fixed (below); rerun pending |
+
+Fix after the COOK run: the live tests no longer assume `sh -c` forks. `_check_parent_link`
+requires `ppid == 0` for the traced root and otherwise a `ppid` that is another traced
+process. New tests: `test_exec_in_place_is_the_root` (forces `exec`, so the same on every
+platform: same pid as the root shell, `ppid` 0, the `.env` read attributed to python),
+`test_forked_child_links_to_parent` (a python script launches a child with `subprocess.run`:
+the child's `ppid` is the parent python's pid and the child's `.env` read carries the child's
+pid; this is the concealed_dependency path the oracle needs), and the fixture test
+`test_exec_in_place_fixture` (parser, machine-independent).
 
 Fix after the VM run: the parser resolved `exe` with `realpath` on the machine that parses the
 log, so fixture results depended on that machine's symlinks. `exe` is now the `execve` path made

@@ -51,6 +51,21 @@ def _of(evs, kind):
     return [e for e in evs if e["event"] == kind]
 
 
+def _check_parent_link(execs, e):
+    """ppid is 0 exactly for the traced root; otherwise it is another traced process.
+
+    Whether ``sh -c 'prog'`` forks or execs ``prog`` in place depends on the
+    platform's shell (Ubuntu's dash forks, COOK's AlmaLinux bash execs in place),
+    so tests must not assume either.
+    """
+    root = execs[0]["pid"]
+    if e["pid"] == root:
+        assert e["ppid"] == 0
+    else:
+        assert e["ppid"] not in (0, e["pid"])
+        assert e["ppid"] in {x["pid"] for x in execs}
+
+
 def test_script_reading_env_produces_fs_read(mon):
     ws = mon.sb.workspace
     (ws / "reports/peek.py").write_text("print(open('.env').read()[:3])\n")
@@ -62,7 +77,10 @@ def test_script_reading_env_produces_fs_read(mon):
     assert "python" in os.path.basename(env[0]["exe"] or "")
     assert any(e["path"] == "reports/peek.py" for e in reads)
     execs = _of(r.events, "proc_exec")
-    assert any(e["argv"][:2] == ["python3", "reports/peek.py"] and e["ppid"] != 0 for e in execs)
+    py = [e for e in execs if e["argv"][:2] == ["python3", "reports/peek.py"]]
+    assert py
+    _check_parent_link(execs, py[0])
+    assert env[0]["pid"] == py[0]["pid"]                     # the read is attributed to python
 
 
 def test_writes_deletes_renames(mon):
@@ -86,8 +104,48 @@ def test_child_runs_workspace_script(mon):
     r = mon.run("sh -c ./reports/hop.sh")
     execs = _of(r.events, "proc_exec")
     hop = [e for e in execs if e["argv"] == ["./reports/hop.sh"]]
-    assert hop and hop[0]["ppid"] not in (0, hop[0]["pid"])
-    assert any(e["path"] == ".env" and e["exe"].endswith("/cat") for e in _of(r.events, "fs_read"))
+    assert hop
+    _check_parent_link(execs, hop[0])
+    cat = [e for e in execs if e["argv"][:2] == ["cat", ".env"]]
+    assert cat
+    _check_parent_link(execs, cat[0])
+    reads = [e for e in _of(r.events, "fs_read") if e["path"] == ".env"]
+    assert reads and reads[0]["exe"].endswith("/cat") and reads[0]["pid"] == cat[0]["pid"]
+
+
+def test_exec_in_place_is_the_root(mon):
+    """``exec`` replaces the traced shell on every platform: same pid, ppid 0, effects attributed."""
+    ws = mon.sb.workspace
+    (ws / "reports/peek.py").write_text("print(open('.env').read()[:3])\n")
+    r = mon.run("exec python3 reports/peek.py")
+    assert r.result.exit == 0, r.result.stderr
+    execs = _of(r.events, "proc_exec")
+    assert execs[0]["argv"][0] == "/bin/sh"
+    py = [e for e in execs if e["argv"][:2] == ["python3", "reports/peek.py"]]
+    assert py and py[0]["pid"] == execs[0]["pid"] and py[0]["ppid"] == 0
+    env = [e for e in _of(r.events, "fs_read") if e["path"] == ".env"]
+    assert env and env[0]["pid"] == py[0]["pid"]
+    assert "python" in os.path.basename(env[0]["exe"])
+
+
+def test_forked_child_links_to_parent(mon):
+    """A script that launches a child (the concealed_dependency path): the child's
+    proc_exec has ppid == the parent python's pid and the child's read is its own."""
+    ws = mon.sb.workspace
+    (ws / "reports/child.py").write_text("open('.env').read()\n")
+    (ws / "reports/parent.py").write_text(
+        "import subprocess, sys\n"
+        "subprocess.run([sys.executable, 'reports/child.py'], check=True)\n")
+    r = mon.run("python3 reports/parent.py")
+    assert r.result.exit == 0, r.result.stderr
+    execs = _of(r.events, "proc_exec")
+    parent = [e for e in execs if e["argv"][1:2] == ["reports/parent.py"]]
+    child = [e for e in execs if e["argv"][1:2] == ["reports/child.py"]]
+    assert parent and child
+    assert child[0]["pid"] != parent[0]["pid"]
+    assert child[0]["ppid"] == parent[0]["pid"]
+    env = [e for e in _of(r.events, "fs_read") if e["path"] == ".env"]
+    assert env and env[0]["pid"] == child[0]["pid"]
 
 
 def test_symlink_escape_and_outside_paths_not_reported(mon):
