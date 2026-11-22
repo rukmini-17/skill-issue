@@ -6,7 +6,7 @@
 |---|---|
 | 1 sandbox builds a workspace and installs skills | **done** (env mode tested on macOS; netns and docker modes written, not yet run) |
 | 2 monitoring | **done** (green on Colab/A100 image and COOK `gtx`, both in `netns` mode, 2026-11-22) |
-| 3 agent loop | not started |
+| 3 agent loop | **code done**; t05 passes with a scripted model; real-model run on the Mac pending (needs `ollama pull qwen3:8b`) |
 | 4 replay (with A) | not started |
 | 5 backends + pilot | not started |
 
@@ -174,6 +174,93 @@ absolute and normalised lexically, without following symlinks (module docstring;
   `git status`. A task that runs `git add -A` would stage them; relevant for A4 / implicit
   effects.
 
+## Checkpoint 3 — agent loop
+
+- `bench/harness/run.py`: `Harness` (loaded by D's runner as `bench.harness.run:Harness`; no
+  required constructor arguments). `run(spec)`:
+  1. starts the mock (A's `bench.mock.MockNetwork` when importable, else the provisional dev
+     mock) and switches on `spec.mock_override`;
+  2. builds the sandbox; **attack runs (`spec.scenario is not None`, as D's runner assumes)
+     require netns/docker**, and a refused attack run writes `run_end: error` plus
+     `meta.harness_error`;
+  3. runs the agent with monitoring;
+  4. runs the task's `success_check` in the sandbox (`file_contains`, `file_not_contains`,
+     `command_exit`) and writes `success.json`, plus a copy in `meta.json["success"]`;
+  5. writes `meta.json` and `messages.json` (the full conversation, for spot checks), then
+     removes the sandbox unless `keep_workspace`.
+- `meta.json` holds:
+  - model, invocation, seed, the runtime policy name, the installed versions;
+  - isolation, observer (and the probe error, if strace was unusable), which mock was used;
+  - the model's `describe()` (backend, base_url, model, model_file, quantization, decoding);
+  - the system prompt's sha256;
+  - the run outcome: `run_end`, steps, tool_calls, malformed_calls, usage, skill_loads,
+    final_text, problems;
+  - timings (build/agent/model/success/total) and the sandbox build info (setup result and
+    per-file skill hashes).
+- `bench/harness/agent.py`: the loop.
+  - The system prompt comes from `prompts/system.md`, with `{skills}` filled by one line per
+    installed skill: `- <name>: <description> (path: .github/skills/<id>/SKILL.md)`, from the
+    SKILL.md frontmatter (D8). The user message is the task prompt unchanged, or prefixed with
+    `/<skill_id> ` for `explicit` invocation.
+  - The loop stops when a turn has no tool call (`done`), at 25 model turns (`step_limit`, D11),
+    at 1,800 s of wall clock (`timeout`, B's choice, to revisit after the pilot), or on a model
+    error (`error`).
+  - Malformed calls (unknown tool, bad JSON, missing or extra or mistyped arguments) go back to
+    the model as `error: malformed tool call: ...`. They are logged in
+    `meta.malformed_calls` and are not executed, so they get no tool line.
+- `bench/harness/tools.py`: the five OpenAI tool schemas and `ToolExecutor`.
+  - Each call writes `requested`, then calls `policy.on_tool_call(ToolCall, installed target
+    version, task)`.
+  - On block: a `policy_decision` event (phase `runtime`, `decision: "block"`), then
+    `status: blocked` with `blocked_by`, and the model gets "blocked by the security policy".
+  - Otherwise the call executes, and the command's monitor events and the mock's new
+    `net_observed` lines are written before the final `completed`/`failed` line.
+  - A policy that raises is treated as a block (fail closed) and recorded in `meta.problems`.
+  - File tools reject absolute paths and paths whose real location leaves the workspace
+    (failed call; the tool line keeps the path as written).
+  - `skill_load` is written when `read_file`, or a monitored command (`fs_read`), reads an
+    installed `SKILL.md`.
+  - Results are truncated to 8,000 characters; `out_bytes` is the UTF-8 size of what the model
+    got.
+  - `http_request` goes through the mock proxy from the harness process (http and https;
+    the agent's own `Host:` header is passed through).
+  - A command that times out is `failed` with `exit: 124`.
+- `bench/harness/model.py`: `ChatModel` protocol, `OpenAIChatModel` (any OpenAI-compatible
+  endpoint; temperature 0.2, max_tokens 4096, seed = `spec.seed`), and `ScriptedModel` for
+  tests. Qwen3 handling: `<think>` blocks are removed from the kept history (stored as
+  reasoning), and `<tool_call>` JSON in the content is parsed when the server returned no
+  structured calls (`parsed_from_content`).
+- `bench/harness/_devmock.py`: **provisional** mock that follows A5's rules (routes, sinks,
+  403 for non-`.example`, overrides, routing by URL host, D6 `net_observed` log; CONNECT
+  refused). It is replaced automatically when `bench/mock` lands.
+- `bench/harness/models.example.yaml`: model registry example (Ollama on the Mac, vLLM, llama.cpp).
+  Models are looked up in `$CDB_MODELS`, else `bench/configs/models.yaml`, which does not exist
+  yet (a shared config; needs approval).
+- `bench/harness/run_task.py`: `python -m bench.harness.run_task <task_id> --model <name>` runs one
+  benign run into `runs/dev/` and prints a summary that never includes tool outputs.
+- Tests: `test_agent_loop.py` (17), offline with scripted models and a fake OpenAI server.
+  - t05 end to end: valid v2 trace, `skill_load`, a served `net_observed`, success true,
+    sandbox removed.
+  - Runtime block gives `status: blocked`; a raising policy fails closed.
+  - Absolute and escaping paths fail; output is truncated; command events sit between the
+    requested and final lines.
+  - Malformed calls, step limit, model error, attack run refused in env, stub mock.
+  - System prompt and explicit invocation; Qwen3 parsing; the OpenAI client (structured and
+    hermes calls, decoding params); dev-mock rules.
+  - The structural D6 check is in `b_helpers.check_trace_v2` until A's schema lands.
+
+### Decisions B made in checkpoint 3 (please review)
+
+- The harness runs `success_check` itself (D's NOTES asked B to either run it or keep the
+  workspace). D's `SuccessChecker` stub currently overwrites `success.json`; it should read
+  `meta.json["success"]` (or leave `success.json` alone).
+- Runtime blocks also emit `policy_decision` with `decision: "block"`. D6 lists the update
+  decisions as `allow`/`ask`/`deny`; A's schema must allow `block` for `phase: runtime`.
+- The file tools are confined to the workspace (a path resolving outside it is a failed call,
+  never executed). The oracle still sees the attempt.
+- The system prompt draft says not to ask the user questions (no human is available during a
+  run). The team reviews the wording.
+
 ## Known weaknesses (checkpoint 2)
 
 - The strace parser has been tested only against a hand-written log in strace 6.x format;
@@ -194,6 +281,17 @@ absolute and normalised lexically, without following symlinks (module docstring;
 - `connect()` attempts to the proxy port from a *different* local process are not
   distinguishable from proxy use.
 - Docker on macOS (Docker Desktop) is untested; Docker Desktop would not start on the dev Mac.
+
+## Known weaknesses (checkpoint 3)
+
+- `env` isolation does not confine the file system. On the Mac, a real model's `run_command`
+  can write anywhere the user can, not only inside the workspace (benign runs only, but
+  still). A macOS `sandbox-exec` profile (writes only inside the stage, network only to the
+  proxy port) would close this for Mac development; not built yet.
+- The context window is not managed: 25 steps of up to 8,000-character outputs can exceed
+  Qwen3-8B's 32k-token context, which then shows up as a model error. To size after the pilot.
+- The dev mock is not A's mock; behaviour may differ once A5 lands.
+- `runs/` is not in `.gitignore` yet (Part 3 says it should be; `.gitignore` is shared).
 
 ## Open questions
 
