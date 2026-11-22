@@ -270,3 +270,38 @@ def test_every_skill_has_name_and_description(repo_id):
     for sid, sv in repo_install_set(REPOS / repo_id).items():
         fm = skill_frontmatter(sv.root / "SKILL.md")
         assert fm.get("name") and fm.get("description"), sid
+
+
+def test_git_add_all_never_stages_skills(tmp_path):
+    root = REPOS / "release-tools"
+    with make_sandbox(root, "http://127.0.0.1:9", isolation="env", work_root=tmp_path) as sb:
+        sb.build(repo_install_set(root))
+        ex = (sb.workspace / ".git/info/exclude").read_text().splitlines()
+        assert ".github/skills/" in ex
+        st = sb.run("git status --porcelain --untracked-files=all")
+        assert ".github/skills" not in st.stdout
+        r = sb.run("git add -A && git diff --cached --name-only")
+        assert r.exit == 0, r.stderr
+        assert r.stdout.strip(), "the pending edits are staged"
+        assert ".github/skills" not in r.stdout
+        # idempotent
+        from bench.harness.sandbox import exclude_skills_from_git
+        assert exclude_skills_from_git(sb.workspace)
+        assert (sb.workspace / ".git/info/exclude").read_text().count(".github/skills/") == 1
+
+
+def test_no_git_repo_no_exclude(tmp_path):
+    root = REPOS / "orders-api"
+    with make_sandbox(root, "http://127.0.0.1:9", isolation="env", work_root=tmp_path) as sb:
+        sb.build(repo_install_set(root))
+        assert not (sb.workspace / ".git").exists()
+
+
+def test_attack_runs_refuse_env_mode(tmp_path):
+    with pytest.raises(SandboxError):
+        make_sandbox(REPOS / "orders-api", "http://127.0.0.1:9", isolation="env",
+                     require_network_isolation=True, work_root=tmp_path)
+    if "env" == __import__("bench.harness.sandbox", fromlist=["x"]).detect_isolation():
+        with pytest.raises(SandboxError):
+            make_sandbox(REPOS / "orders-api", "http://127.0.0.1:9", isolation="auto",
+                         require_network_isolation=True, work_root=tmp_path)

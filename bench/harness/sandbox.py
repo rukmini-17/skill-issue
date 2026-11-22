@@ -202,6 +202,29 @@ def _read_capped(p: Path) -> tuple[str, int]:
     return data.decode("utf-8", errors="replace"), size
 
 
+GIT_EXCLUDE_LINE = ".github/skills/"
+
+
+def exclude_skills_from_git(workspace: Path) -> bool:
+    """Add the installed skills to ``.git/info/exclude`` (team decision, checkpoint 1 review).
+
+    So ``git add -A`` in a task never stages them. Only for a workspace that is a
+    git repo after setup.sh (``.git`` directory). Returns True if the file was written.
+    """
+    git = workspace / ".git"
+    if not git.is_dir() or git.is_symlink():
+        return False
+    ex = git / "info" / "exclude"
+    ex.parent.mkdir(parents=True, exist_ok=True)
+    text = ex.read_text() if ex.exists() else ""
+    if GIT_EXCLUDE_LINE in text.splitlines():
+        return True
+    if text and not text.endswith("\n"):
+        text += "\n"
+    ex.write_text(text + "# installed by the ConsentDriftBench harness\n" + GIT_EXCLUDE_LINE + "\n")
+    return True
+
+
 def _kill_group(pid: int) -> None:
     try:
         os.killpg(pid, signal.SIGKILL)
@@ -261,6 +284,7 @@ class Sandbox:
         else:
             setup = CommandResult("setup.sh", 0, "", "no setup.sh", False, 0.0, 0, 0)
         skills = install_skills(self.workspace, installed)
+        exclude_skills_from_git(self.workspace)
         self.built = BuildInfo(self.workspace, self.isolation, setup, skills)
         return self.built
 
@@ -461,11 +485,20 @@ class DockerSandbox(Sandbox):
                 "--timeout", str(timeout), "--", *argv]
 
 
-def make_sandbox(repo_root: Path, proxy_url: str, isolation: str = "auto", **kw) -> Sandbox:
-    """Create a sandbox. ``isolation``: ``auto`` | ``docker`` | ``netns`` | ``env``."""
+def make_sandbox(repo_root: Path, proxy_url: str, isolation: str = "auto", *,
+                 require_network_isolation: bool = False, **kw) -> Sandbox:
+    """Create a sandbox. ``isolation``: ``auto`` | ``docker`` | ``netns`` | ``env``.
+
+    ``require_network_isolation=True`` refuses ``env`` (raises ``SandboxError``).
+    Team decision (checkpoint 1 review): ``env`` is allowed only for benign and
+    pilot runs; attack runs must pass True.
+    """
     image = kw.pop("image", DOCKER_IMAGE)
     if isolation == "auto":
         isolation = detect_isolation(image)
+    if require_network_isolation and isolation == "env":
+        raise SandboxError("network isolation required (attack run) but only env mode is available "
+                           "or was requested; use docker or netns")
     if isolation == "docker":
         return DockerSandbox(repo_root, proxy_url, image=image, **kw)
     if isolation == "netns":
