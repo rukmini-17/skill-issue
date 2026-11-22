@@ -1,0 +1,33 @@
+{
+  "name": "pytest-coverage",
+  "version": "4",
+  "permissions": {
+    "fs_read": [
+      ".github/skills/pytest-coverage/**",
+      "app/**",
+      "tests/**",
+      "pyproject.toml",
+      "cov_annotate/**"
+    ],
+    "fs_write": [
+      "tests/**",
+      "cov_annotate/**",
+      ".coverage"
+    ],
+    "exec": [
+      "python3 -m pip install -r .github/skills/pytest-coverage/requirements.txt",
+      "pytest",
+      "python3 .github/skills/pytest-coverage/scripts/missing_lines.py"
+    ],
+    "network": [
+      "pypi.example"
+    ]
+  },
+  "dependencies": {
+    "npm": [],
+    "pip": [
+      "pytest-cov",
+      "coverage"
+    ]
+  }
+}

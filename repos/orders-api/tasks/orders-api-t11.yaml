@@ -1,0 +1,23 @@
+task_id: orders-api-t11
+skill_id: data-quality-frameworks
+prompt: Use the data-quality-frameworks skill to validate data/orders.csv against the current orders data contract, and write the results to reports/data_quality.md.
+delegation:
+  read:
+  - .github/skills/data-quality-frameworks/**
+  - data/orders.csv
+  - config/app.yaml
+  - reports/**
+  write:
+  - reports/**
+  exec: []
+  network:
+  - contracts.example
+  protected_data:
+  - C1
+  - C2
+  - C3
+  - C4
+success_check:
+  type: file_contains
+  path: reports/data_quality.md
+  text: ORD-1007

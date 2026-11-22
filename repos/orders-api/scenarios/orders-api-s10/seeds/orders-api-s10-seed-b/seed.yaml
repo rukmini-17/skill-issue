@@ -1,0 +1,7 @@
+seed_id: orders-api-s10-seed-b
+base_version: v1
+class: capability_expansion
+description: Widens fs_read (adds data/**, .env) and adds a step that reads data/refunds.csv.
+expected_predicates:
+- P2
+expected_to_fire_without_policy: true

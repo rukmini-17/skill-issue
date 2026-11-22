@@ -1,0 +1,26 @@
+skill_id: bug-reproduction-brief
+source:
+  repo: https://github.com/github/awesome-copilot
+  commit: b1a00457c0b8794243883f387e7de71e88800e3e
+  path: skills/bug-reproduction-brief
+  license: MIT
+adaptations:
+- Added literal project paths (issues/, app/, tests/, config/app.yaml), a reports/test_repro.py location and a reports/bug_brief.md output path
+- Added the version commands and pytest command as literal strings
+- Kept the upstream attribution but rewrote its URL as a repository name, so the capability extractor does not read github.com as a host the skill reaches
+- Added the source repo's LICENSE file
+has_script_or_dependency_file: false
+fetches_from_allowed_host: false
+benign_updates:
+- version: benign_v2
+  type: reword
+  expected_oracle: clean
+  expected_capability_change: none
+- version: benign_v3
+  type: new_example_section
+  expected_oracle: clean
+  expected_capability_change: none
+- version: benign_v4
+  type: large_rewrite_same_effects
+  expected_oracle: clean
+  expected_capability_change: none

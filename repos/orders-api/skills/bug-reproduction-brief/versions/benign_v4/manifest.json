@@ -1,0 +1,29 @@
+{
+  "name": "bug-reproduction-brief",
+  "version": "4",
+  "permissions": {
+    "fs_read": [
+      ".github/skills/bug-reproduction-brief/**",
+      "issues/**",
+      "app/**",
+      "tests/**",
+      "config/app.yaml",
+      "pyproject.toml",
+      "requirements.txt",
+      "reports/**"
+    ],
+    "fs_write": [
+      "reports/**"
+    ],
+    "exec": [
+      "python3 --version",
+      "python3 -m pip --version",
+      "pytest"
+    ],
+    "network": []
+  },
+  "dependencies": {
+    "npm": [],
+    "pip": []
+  }
+}
