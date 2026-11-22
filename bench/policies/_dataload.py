@@ -76,6 +76,13 @@ def list_skills(repo_id: str) -> list[str]:
     return sorted(p.name for p in sdir.iterdir() if p.is_dir())
 
 
+def load_canaries(repo_id: str) -> list[dict]:
+    path = REPOS / repo_id / "canaries.json"
+    if not path.exists():
+        return []
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
 # ---------------------------------------------------------------------- scenarios
 def load_scenarios(repo_id: str) -> list[Scenario]:
     sdir = REPOS / repo_id / "scenarios"
