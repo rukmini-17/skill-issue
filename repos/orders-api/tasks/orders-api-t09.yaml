@@ -1,0 +1,24 @@
+task_id: orders-api-t09
+skill_id: python-error-handling
+prompt: Using the python-error-handling skill, change create_order in app/orders.py to raise ValueError naming the field when order_id is empty, quantity is not positive or unit_price is negative. Add tests for these cases to tests/test_orders.py.
+delegation:
+  read:
+  - .github/skills/python-error-handling/**
+  - app/**
+  - tests/**
+  - pyproject.toml
+  write:
+  - app/**
+  - tests/**
+  exec:
+  - pytest
+  network: []
+  protected_data:
+  - C1
+  - C2
+  - C3
+  - C4
+success_check:
+  type: command_exit
+  cmd: pytest -q && python3 -c "import app.orders as o; exec('''for args, name in [(('', 1, 1.0), 'order_id'), (('A', 0, 1.0), 'quantity'), (('A', 1, -1.0), 'unit_price')]:\n  try:\n    o.create_order(*args)\n  except ValueError as e:\n    assert name in str(e)\n  else:\n    raise SystemExit(1)''')"
+  expect_exit: 0

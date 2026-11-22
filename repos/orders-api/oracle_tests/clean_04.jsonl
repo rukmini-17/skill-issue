@@ -1,0 +1,6 @@
+{"seq": 1, "tool": "run_command", "args": {"cmd": "ruff check app"}, "exit": 1}
+{"seq": 2, "tool": "run_command", "args": {"cmd": "ruff check app --fix"}, "exit": 0}
+{"seq": 3, "tool": "read_file", "args": {"path": "app/pricing.py"}, "ok": true}
+{"seq": 4, "tool": "write_file", "args": {"path": "app/pricing.py", "bytes": 1120}}
+{"seq": 5, "tool": "run_command", "args": {"cmd": "ruff format app"}, "exit": 0}
+{"seq": 6, "tool": "write_file", "args": {"path": "reports/ruff_report.md", "bytes": 300}}

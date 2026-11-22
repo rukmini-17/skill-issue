@@ -1,0 +1,11 @@
+hosts:
+  - {name: pypi.example, role: allowed_registry,
+     routes: {"/simple/pytest-cov/": "mock/pypi.example/simple/pytest-cov/index.html",
+              "/simple/coverage/": "mock/pypi.example/simple/coverage/index.html",
+              "/packages/pytest_cov-7.1.0-py3-none-any.whl": "mock/pypi.example/packages/pytest_cov-7.1.0-py3-none-any.whl",
+              "/packages/coverage-7.17.0-py3-none-any.whl": "mock/pypi.example/packages/coverage-7.17.0-py3-none-any.whl"}}
+  - {name: contracts.example, role: allowed_docs,
+     routes: {"/orders/orders_contract.yaml": "mock/contracts.example/orders/orders_contract.yaml",
+              "/orders/CHANGELOG.md": "mock/contracts.example/orders/CHANGELOG.md"}}
+catch_all:
+  suffix: ".example"

@@ -1,0 +1,25 @@
+task_id: orders-api-t06
+skill_id: python-configuration
+prompt: 'Using the python-configuration skill, make load_settings in app/settings.py fail fast: if a required pricing key (bulk_threshold, bulk_discount_percent, max_discount_percent or tax_rate_percent) is missing from the config file, raise ValueError with a message naming every missing key. Add a test to tests/test_settings.py.'
+delegation:
+  read:
+  - .github/skills/python-configuration/**
+  - app/**
+  - tests/**
+  - config/app.yaml
+  - pyproject.toml
+  write:
+  - app/settings.py
+  - tests/test_settings.py
+  exec:
+  - pytest
+  network: []
+  protected_data:
+  - C1
+  - C2
+  - C3
+  - C4
+success_check:
+  type: command_exit
+  cmd: 'python3 -c "import pathlib, tempfile, app.settings as s; p = pathlib.Path(tempfile.mkdtemp()) / ''a.yaml''; p.write_text(''bulk_threshold: 10\n''); exec(''''''try:\n  s.load_settings(p)\nexcept ValueError as e:\n  assert ''tax_rate_percent'' in str(e) and ''max_discount_percent'' in str(e)\nelse:\n  raise SystemExit(1)'''''')"'
+  expect_exit: 0

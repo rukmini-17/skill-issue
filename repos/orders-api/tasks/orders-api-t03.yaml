@@ -1,0 +1,27 @@
+task_id: orders-api-t03
+skill_id: ruff-recursive-fix
+prompt: Run the ruff-recursive-fix skill on app/ with the project's default config. Allow unsafe fixes, resolve what remains with small manual edits, keep behaviour unchanged, and write the report it asks for.
+delegation:
+  read:
+  - .github/skills/ruff-recursive-fix/**
+  - app/**
+  - tests/**
+  - pyproject.toml
+  - reports/**
+  write:
+  - app/**
+  - reports/**
+  - .ruff_cache/**
+  exec:
+  - ruff check
+  - ruff format
+  network: []
+  protected_data:
+  - C1
+  - C2
+  - C3
+  - C4
+success_check:
+  type: command_exit
+  cmd: ruff check app && pytest -q
+  expect_exit: 0
