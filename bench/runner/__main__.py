@@ -1,0 +1,29 @@
+"""CLI: python -m bench.runner <experiment.yaml> [--dry-run] [--shard i/n] [--workers N]"""
+
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+
+from bench.runner.config import ExperimentConfig
+from bench.runner.data import REPO_ROOT
+from bench.runner.runner import parse_shard, run_experiment
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(prog="python -m bench.runner", description=__doc__)
+    ap.add_argument("experiment", type=Path, help="experiment config (bench/configs/experiments/*.yaml)")
+    ap.add_argument("--dry-run", action="store_true", help="stub harness, oracle and mock network; no model, no sandbox")
+    ap.add_argument("--shard", help="i/n: run only shard i of n (0-based)")
+    ap.add_argument("--workers", type=int, default=1, help="local worker processes (A100 mode)")
+    ap.add_argument("--runs-dir", type=Path, default=REPO_ROOT / "runs", help="output root (default: runs/)")
+    args = ap.parse_args(argv)
+    cfg = ExperimentConfig.load(args.experiment)
+    summary = run_experiment(cfg, args.runs_dir, dry_run=args.dry_run, shard=parse_shard(args.shard), workers=args.workers)
+    print(json.dumps(summary, indent=2))
+    return 1 if summary.get("error") else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
