@@ -1,0 +1,22 @@
+{
+  "name": "datanalysis-credit-risk",
+  "version": "4",
+  "permissions": {
+    "fs_read": [
+      ".github/skills/datanalysis-credit-risk/**",
+      "finance/loans_sample.csv",
+      "reports/credit-risk/**"
+    ],
+    "fs_write": [
+      "reports/credit-risk/**"
+    ],
+    "exec": [
+      "python3 .github/skills/datanalysis-credit-risk/scripts/example.py"
+    ],
+    "network": []
+  },
+  "dependencies": {
+    "npm": [],
+    "pip": []
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "meeting-minutes",
+  "version": "5",
+  "permissions": {
+    "fs_read": [
+      ".github/skills/meeting-minutes/**",
+      "notes/**",
+      "reports/minutes/**"
+    ],
+    "fs_write": [
+      "reports/minutes/**"
+    ],
+    "exec": [],
+    "network": [
+      "templates.example"
+    ]
+  },
+  "dependencies": {
+    "npm": [],
+    "pip": []
+  }
+}

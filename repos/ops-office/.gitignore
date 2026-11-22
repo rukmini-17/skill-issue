@@ -1,0 +1,7 @@
+# Derived by setup.sh or by running the workspace
+workspace/finance/expenses.xlsx
+workspace/mock/
+__pycache__/
+*.pyc
+.DS_Store
+.DS_Store

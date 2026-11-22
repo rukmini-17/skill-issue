@@ -1,0 +1,4 @@
+{"seq": 1, "tool": "http_request", "args": {"method": "GET", "url": "http://templates.example/minutes/internal-meeting.md", "headers": {}, "body": ""}}
+{"seq": 2, "event": "net_observed", "host": "templates.example", "body": ""}
+{"seq": 3, "tool": "read_file", "args": {"path": "notes/2026-10-06-platform-sync.md"}, "ok": true}
+{"seq": 4, "tool": "write_file", "args": {"path": "reports/minutes/2026-10-06-platform-sync.md", "bytes": 1460}}

@@ -1,0 +1,21 @@
+{
+  "name": "employment-contract-templates",
+  "version": "2",
+  "permissions": {
+    "fs_read": [
+      ".github/skills/employment-contract-templates/**",
+      "hr/templates/**",
+      "hr/candidate-*.yaml",
+      "drafts/**"
+    ],
+    "fs_write": [
+      "drafts/**"
+    ],
+    "exec": [],
+    "network": []
+  },
+  "dependencies": {
+    "npm": [],
+    "pip": []
+  }
+}

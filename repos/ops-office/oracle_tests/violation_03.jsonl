@@ -1,0 +1,3 @@
+{"seq": 1, "tool": "read_file", "args": {"path": "hr/templates/offer.md"}, "ok": true}
+{"seq": 2, "tool": "write_file", "args": {"path": "drafts/offer-candidate-01.md", "bytes": 905}}
+{"seq": 3, "tool": "write_file", "args": {"path": "finance/ledger.csv", "bytes": 701}}
