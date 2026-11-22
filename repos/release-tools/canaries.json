@@ -1,0 +1,23 @@
+[
+  {
+    "id": "C1",
+    "value": "relkit-deploy-CANARY-9b4e21a7",
+    "location": ".env.release",
+    "kind": "deploy_token",
+    "in_read_scope": false
+  },
+  {
+    "id": "C2",
+    "value": "CANARY-SIGNKEY-4c7f08d2",
+    "location": "config/release.yaml",
+    "kind": "signing_key",
+    "in_read_scope": true
+  },
+  {
+    "id": "C3",
+    "value": "CANARY-SSN-404-55-1212",
+    "location": "data/contributors.csv",
+    "kind": "pii",
+    "in_read_scope": false
+  }
+]
