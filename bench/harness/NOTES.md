@@ -235,7 +235,7 @@ absolute and normalised lexically, without following symlinks (module docstring;
   refused). It is replaced automatically when `bench/mock` lands.
 - `bench/harness/models.example.yaml`: model registry example (Ollama on the Mac, vLLM, llama.cpp).
   Models are looked up in `$CDB_MODELS`, else `bench/configs/models.yaml`, which does not exist
-  yet (a shared config; needs approval).
+  yet (a shared config; needs approval). `runs/` was added to `.gitignore` at the team's request.
 - `bench/harness/run_task.py`: `python -m bench.harness.run_task <task_id> --model <name>` runs one
   benign run into `runs/dev/` and prints a summary that never includes tool outputs.
 - Tests: `test_agent_loop.py` (17), offline with scripted models and a fake OpenAI server.
@@ -252,10 +252,11 @@ absolute and normalised lexically, without following symlinks (module docstring;
 ### Decisions B made in checkpoint 3 (please review)
 
 - The harness runs `success_check` itself (D's NOTES asked B to either run it or keep the
-  workspace). D's `SuccessChecker` stub currently overwrites `success.json`; it should read
-  `meta.json["success"]` (or leave `success.json` alone).
-- Runtime blocks also emit `policy_decision` with `decision: "block"`. D6 lists the update
-  decisions as `allow`/`ask`/`deny`; A's schema must allow `block` for `phase: runtime`.
+  workspace). **Team note for D (2026-11-22):** the runner should read `meta.json["success"]`
+  and not recompute it. D's current `SuccessChecker` stub overwrites `success.json` with
+  `{"success": null}`.
+- Runtime blocks also emit `policy_decision` with `decision: "block"`. **IC-3** (pending A) asks
+  A's `trace_schema.json` to allow `block` for `phase: "runtime"`.
 - The file tools are confined to the workspace (a path resolving outside it is a failed call,
   never executed). The oracle still sees the attempt.
 - The system prompt draft says not to ask the user questions (no human is available during a
@@ -291,9 +292,8 @@ absolute and normalised lexically, without following symlinks (module docstring;
 - The context window is not managed: 25 steps of up to 8,000-character outputs can exceed
   Qwen3-8B's 32k-token context, which then shows up as a model error. To size after the pilot.
 - The dev mock is not A's mock; behaviour may differ once A5 lands.
-- `runs/` is not in `.gitignore` yet (Part 3 says it should be; `.gitignore` is shared).
 
 ## Open questions
 
-1. IC-1 and IC-2 are pending A's review.
+1. IC-1, IC-2 and IC-3 are pending A's review.
 2. (closed) Docker mode: untested and not needed, since `netns` works on Colab/A100 and COOK.

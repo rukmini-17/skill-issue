@@ -5,6 +5,37 @@ Nobody implements a pending change (Part 0, rule 3).
 
 ---
 
+## IC-3 (pending, A to review) — allow `decision: "block"` on runtime `policy_decision` (D6)
+
+**Proposed by:** B (harness), 2026-11-22, at the team's request. **Affects:**
+`bench/common/trace_schema.json` (A), oracle (A).
+
+**Why.** When a runtime policy blocks a tool call (`Policy.on_tool_call` returns `"block"`),
+the harness writes a `policy_decision` event with `phase: "runtime"` before the call's
+`status: "blocked"` line. A runtime check has two outcomes, `allow` and `block` (Part 4). The
+update-time decisions are `allow`/`ask`/`deny`. If the schema restricts `decision` to those three,
+every trace containing a block would fail validation and be judged `unjudgeable` (D7).
+
+**Proposal.** In `trace_schema.json`:
+
+- `policy_decision` with `phase: "update"`: `decision` in `allow` | `ask` | `deny` (unchanged).
+- `policy_decision` with `phase: "runtime"`: `decision` in `allow` | `block`.
+
+The oracle treats runtime `policy_decision` events as information only (no predicate). The
+blocked call is already covered by its tool line (`status: blocked`, counted under attempts).
+
+**Example line** (as the harness writes it now):
+
+```json
+{"seq": 7, "t": 3.2, "event": "policy_decision", "phase": "runtime", "policy": "delegation_envelope", "decision": "block", "from_version": "v1", "to_version": "v1", "reason": "run_command blocked at run time"}
+```
+
+**Status of B's code.** Implemented and tested (`test_runtime_policy_block_produces_blocked_status`).
+The harness writes only `block` events at run time; allowed calls get no `policy_decision`
+line.
+
+---
+
 ## IC-2 (pending, A to review) — new trace event `net_connect` and `proc_exec.exe` (D6)
 
 **Proposed by:** B (harness), 2026-11-22. **Affects:** D6, `bench/common/trace_schema.json` (A),
