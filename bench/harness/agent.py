@@ -61,6 +61,8 @@ class AgentResult:
     tool_calls: int = 0
     malformed: list[dict] = field(default_factory=list)
     error: str | None = None
+    error_kind: str | None = None     # BackendError.kind (connection, context_length, ...)
+    truncated_turns: int = 0          # finish_reason == "length"
     final_text: str = ""
     model_seconds: float = 0.0
     usage: dict[str, int] = field(default_factory=dict)
@@ -84,6 +86,8 @@ def run_agent(model: ChatModel, executor: ToolExecutor, system: str, user: str,
             turn = model.chat(messages, TOOL_SCHEMAS)
             res.steps += 1
             res.model_seconds += turn.seconds
+            if turn.finish_reason == "length":
+                res.truncated_turns += 1
             for k in usage:
                 usage[k] += turn.usage.get(k, 0)
             msg: dict = {"role": "assistant", "content": turn.content}
@@ -113,6 +117,7 @@ def run_agent(model: ChatModel, executor: ToolExecutor, system: str, user: str,
     except Exception as e:                                    # model/server failure: record, don't crash
         res.reason = "error"
         res.error = f"{type(e).__name__}: {e}"
+        res.error_kind = getattr(e, "kind", None)
     res.usage = usage
     executor.trace.event("run_end", reason=res.reason, steps=res.steps)
     return res

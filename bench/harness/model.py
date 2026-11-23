@@ -1,10 +1,9 @@
 """Chat-model client for the agent loop (workstream B, B3).
 
 The agent talks to any OpenAI-compatible chat endpoint with tool calling
-(D11). ``ChatModel`` is the minimal interface the loop needs; B5 adds the
-vllm / llamacpp / tinker backends behind it. ``OpenAIChatModel`` works with any
-server that speaks the OpenAI chat API (vLLM, llama.cpp ``llama-server``,
-Ollama's ``/v1``).
+(D11). ``ChatModel`` is the minimal interface the loop needs; the clients
+(vllm / llamacpp / tinker / ollama) live in ``bench.backends``.
+``OpenAIChatModel`` is an alias of ``bench.backends.base.OpenAICompatModel``.
 
 Tool-call parsing per model family:
 
@@ -46,7 +45,7 @@ class AssistantTurn:
 
 class ChatModel(Protocol):
     name: str
-    def chat(self, messages: list[dict], tools: list[dict]) -> AssistantTurn: ...
+    def chat(self, messages: list[dict], tools: list[dict] | None = None) -> AssistantTurn: ...
     def describe(self) -> dict: ...      # backend, model file, quantization, decoding (meta.json)
 
 
@@ -94,56 +93,12 @@ def normalise_turn(content: str | None, tool_calls: list[ToolCallRequest], famil
     return AssistantTurn(visible, tool_calls, reasoning, parsed_from_content=parsed)
 
 
-class OpenAIChatModel:
-    """Any OpenAI-compatible endpoint. Decoding defaults follow D11 (agent temperature 0.2)."""
-
-    def __init__(self, name: str, base_url: str, model: str, api_key: str = "none",
-                 family: str = "qwen3", temperature: float = 0.2, max_tokens: int = 4096,
-                 seed: int | None = None, timeout: float = 600.0, extra_body: dict | None = None,
-                 backend: str = "openai-compatible", model_file: str | None = None,
-                 quantization: str | None = None):
-        from openai import OpenAI          # imported lazily so tests without a model don't need it
-        self.name = name
-        self.model = model
-        self.family = family
-        self.temperature = temperature
-        self.max_tokens = max_tokens
-        self.seed = seed
-        self.extra_body = extra_body or {}
-        self.backend = backend
-        self.base_url = base_url
-        self.model_file = model_file
-        self.quantization = quantization
-        self._client = OpenAI(base_url=base_url, api_key=api_key, timeout=timeout, max_retries=2)
-
-    def describe(self) -> dict:
-        return {"name": self.name, "backend": self.backend, "base_url": self.base_url, "model": self.model,
-                "model_file": self.model_file, "quantization": self.quantization, "family": self.family,
-                "decoding": {"temperature": self.temperature, "max_tokens": self.max_tokens,
-                             "seed": self.seed, **({"extra_body": self.extra_body} if self.extra_body else {})}}
-
-    def chat(self, messages: list[dict], tools: list[dict]) -> AssistantTurn:
-        t0 = time.monotonic()
-        kw: dict[str, Any] = dict(model=self.model, messages=messages, tools=tools, tool_choice="auto",
-                                  temperature=self.temperature, max_tokens=self.max_tokens)
-        if self.seed is not None:
-            kw["seed"] = self.seed
-        if self.extra_body:
-            kw["extra_body"] = self.extra_body
-        resp = self._client.chat.completions.create(**kw)
-        choice = resp.choices[0]
-        msg = choice.message
-        calls = [ToolCallRequest(tc.id or f"call_{uuid.uuid4().hex[:12]}", tc.function.name or "",
-                                 tc.function.arguments or "")
-                 for tc in (msg.tool_calls or []) if getattr(tc, "function", None)]
-        reasoning = getattr(msg, "reasoning_content", None) or getattr(msg, "reasoning", None) or ""
-        turn = normalise_turn(msg.content, calls, self.family, reasoning)
-        turn.finish_reason = choice.finish_reason
-        if resp.usage:
-            turn.usage = {"prompt_tokens": resp.usage.prompt_tokens,
-                          "completion_tokens": resp.usage.completion_tokens}
-        turn.seconds = time.monotonic() - t0
-        return turn
+def __getattr__(name):
+    # The OpenAI-compatible client moved to bench.backends (B5); kept here for old imports.
+    if name == "OpenAIChatModel":
+        from bench.backends.base import OpenAICompatModel
+        return OpenAICompatModel
+    raise AttributeError(name)
 
 
 class ScriptedModel:

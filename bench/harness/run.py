@@ -14,9 +14,8 @@ One call = one agent run (D9 step 5):
    remove the sandbox (unless ``keep_workspace``).
 
 ``Harness()`` takes no required arguments, so the runner can load it by dotted
-path. Models are looked up by name (``spec.model``) in the file named by
-``$CDB_MODELS``, else ``bench/configs/models.yaml``; see
-``bench/harness/models.example.yaml``.
+path. Models are looked up by name (``spec.model``) through
+``bench.backends.make_model`` (``$CDB_MODELS``, else ``bench/configs/models.yaml``).
 """
 
 from __future__ import annotations
@@ -40,31 +39,16 @@ from bench.interfaces import RunSpec, StubMockNetwork, Task
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 REPOS = REPO_ROOT / "repos"
-MODELS_FILE = REPO_ROOT / "bench" / "configs" / "models.yaml"
 
 
 # --------------------------------------------------------------------------
 # models
 # --------------------------------------------------------------------------
 
-def load_model_config(name: str, path: Path | None = None) -> dict:
-    path = Path(path or os.environ.get("CDB_MODELS") or MODELS_FILE)
-    if not path.is_file():
-        raise RuntimeError(f"no model config: {path} does not exist (set $CDB_MODELS or create "
-                           f"bench/configs/models.yaml; see bench/harness/models.example.yaml)")
-    cfg = (yaml.safe_load(path.read_text()) or {}).get("models") or {}
-    if name not in cfg:
-        raise RuntimeError(f"model {name!r} not in {path}; known: {sorted(cfg)}")
-    return dict(cfg[name])
-
-
 def default_model_factory(name: str, seed: int):
-    from bench.harness.model import OpenAIChatModel
-    c = load_model_config(name)
-    key_env = c.pop("api_key_env", None)
-    api_key = os.environ.get(key_env, "") if key_env else c.pop("api_key", "none")
-    c.pop("api_key", None)
-    return OpenAIChatModel(name=name, api_key=api_key or "none", seed=c.pop("seed", seed), **c)
+    """Model ``name`` from the models file; the run's repeat seed unless the entry fixes one."""
+    from bench.backends import make_model, model_config
+    return make_model(name) if model_config(name).get("seed") is not None else make_model(name, seed=seed)
 
 
 # --------------------------------------------------------------------------
@@ -145,6 +129,7 @@ class Harness:
         t_start = time.monotonic()
         meta: dict[str, Any] = {
             "run_id": spec.run_id, "harness": "bench.harness.run", "task_id": spec.task.task_id,
+            "skill_id": spec.task.skill_id,
             "repo_id": spec.task.repo_id, "model": spec.model, "invocation": spec.invocation,
             "seed": spec.seed, "policy_runtime": getattr(spec.policy, "name", None),
             "attack_run": spec.scenario is not None, "ic2": self.ic2,
@@ -188,7 +173,9 @@ class Harness:
             meta["timings"]["agent_s"] = round(time.monotonic() - t, 3)
             meta["timings"]["model_s"] = round(res.model_seconds, 3)
             meta.update(run_end=res.reason, steps=res.steps, tool_calls=res.tool_calls,
-                        malformed_calls=res.malformed, agent_error=res.error, usage=res.usage,
+                        malformed_calls=res.malformed, agent_error=res.error,
+                        agent_error_kind=res.error_kind, truncated_turns=res.truncated_turns,
+                        usage=res.usage,
                         skill_loads=sorted(set(ex.skill_loads)), final_text=res.final_text[:4000],
                         problems=ex.problems)
             if tail.bad:

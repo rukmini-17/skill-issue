@@ -7,8 +7,8 @@
 | 1 sandbox builds a workspace and installs skills | **done** (env mode tested on macOS; netns and docker modes written, not yet run) |
 | 2 monitoring | **done** (green on Colab/A100 image and COOK `gtx`, both in `netns` mode, 2026-11-22) |
 | 3 agent loop | **code done**; t05 passes with a scripted model; real-model run **deferred to the pilot on COOK/Colab** (see checkpoint 3) |
-| 4 replay (with A) | not started |
-| 5 backends + pilot | not started |
+| 4 replay (with A) | not started; joint A+B step, done later together (skipped ahead to 5 on the team's request) |
+| 5 backends + pilot | **code done** (2026-11-23); tested against a fake server only; pilot **not launched** (humans launch) |
 
 ## Checkpoint 1 — what was built
 
@@ -233,9 +233,8 @@ absolute and normalised lexically, without following symlinks (module docstring;
 - `bench/harness/_devmock.py`: **provisional** mock that follows A5's rules (routes, sinks,
   403 for non-`.example`, overrides, routing by URL host, D6 `net_observed` log; CONNECT
   refused). It is replaced automatically when `bench/mock` lands.
-- `bench/harness/models.example.yaml`: model registry example (Ollama on the Mac, vLLM, llama.cpp).
-  Models are looked up in `$CDB_MODELS`, else `bench/configs/models.yaml`, which does not exist
-  yet (a shared config; needs approval). `runs/` was added to `.gitignore` at the team's request.
+- (replaced in checkpoint 5) `models.example.yaml` became `bench/configs/models.yaml`.
+  `runs/` was added to `.gitignore` at the team's request.
 - `bench/harness/run_task.py`: `python -m bench.harness.run_task <task_id> --model <name>` runs one
   benign run into `runs/dev/` and prints a summary that never includes tool outputs.
 - Tests: `test_agent_loop.py` (17), offline with scripted models and a fake OpenAI server.
@@ -291,6 +290,71 @@ tested only with scripted models and a fake OpenAI-compatible server (`test_agen
   distinguishable from proxy use.
 - Docker on macOS (Docker Desktop) is untested; Docker Desktop would not start on the dev Mac.
 
+## Checkpoint 5 — backends and pilot scripts (2026-11-23)
+
+Checkpoint 4 (reference replay) is a joint A+B step and was skipped for now.
+
+### What was built
+
+- `bench/backends/`: `base.py` (`OpenAICompatModel`: request building, retries, error
+  classes, health, metadata), `vllm.py`, `llamacpp.py`, `tinker.py`, `hermes.py` (prompt-mode
+  tool calling in Qwen3's format), `__init__.py` (`make_model(name, **overrides)`, config
+  loading with `${VAR:-default}` expansion), `__main__.py` (CLI for the job scripts: `list`,
+  `show`, `get`, `serve-cmd`, `wait`; it never sends a chat request).
+  - One interface: `chat(messages, tools=None) -> AssistantTurn`, `describe()`, and
+    `complete(messages) -> str` for C's `llm_reviewer` and D's attacker (no tools; override
+    `temperature` in `make_model`). `bench.harness.model.OpenAIChatModel` is now an alias.
+  - Errors are `BackendError(kind)`: `connection`, `timeout`, `server`, `rate_limit` are
+    retried (`retries`, exponential `retry_backoff`); `context_length`, `bad_request`, `auth`,
+    `not_found`, `bad_response` fail at once. The run ends with `run_end: error` and meta.json
+    gets `agent_error_kind`. The openai client's own retries are off.
+  - `tool_mode: native` sends `tools`; `prompt` writes them into the system message the way
+    Qwen3's chat template does, renders earlier calls as `<tool_call>` text and results as
+    `<tool_response>` user turns, and parses the reply. Tinker defaults to `prompt`.
+  - `describe()` adds `server_info` (vLLM `/v1/models`: `max_model_len`, weights root;
+    llama.cpp `/props`: model path, `n_ctx`); best effort, never fails a run.
+- `bench/configs/models.yaml` (**shared config, proposed, needs team approval**): Qwen3
+  4B/8B/14B/32B for vLLM (bf16, A100) and llama.cpp (Q4_K_M, COOK gtx/gtx/t4/rtx), two Tinker
+  entries (not pilot candidates), Ollama for the Mac. `$CDB_MODELS` still overrides it.
+- New meta.json fields: `skill_id`, `agent_error_kind`, `truncated_turns` (turns with
+  `finish_reason: length`).
+- `bench/harness/pilot.py`: `run` (55 tasks x 3 repeats, seeds 0-2, v1, policy `none`,
+  natural invocation; `--shard i/n`, `--workers`, `--deadline-s`, `--max-total-tokens`,
+  `--dry-run`; resumable; `progress.jsonl`) and `summarize` (task success, clean rate,
+  skill-load rate, run_end mix, malformed calls, time, tokens; per model and per repo; Wilson
+  intervals; `--update-md` fills `PILOT.md` between markers, `--csv`).
+- Job files (**not launched**): `slurm/pilot_cook.sbatch` (array of 8 shards per model; each
+  starts llama-server on a per-job port, waits, runs its shard with a deadline inside the
+  2-hour limit, stops the server), `scripts/pilot_vllm.sh` (A100), `scripts/pilot_tinker.sh`
+  (requires `MAX_TOKENS`).
+- `bench/harness/PILOT.md`: the report template.
+- Tests: `bench/tests/b/test_backends.py` (30) and `test_pilot.py` (8) against
+  `b_fake_openai.py`, a stdlib fake OpenAI-compatible server. Full B suite on the Mac:
+  89 passed, 9 skipped.
+
+### Decisions B made in checkpoint 5 (please review)
+
+1. Qwen3 thinking stays at the model default (on) for the pilot, with 4096 max tokens per turn.
+   `truncated_turns` shows whether that is too small.
+2. Context: 32768 tokens on both backends (Qwen3's native length), one llama.cpp slot (`-np 1`).
+3. A COOK array of 8 shards per model counts as 8 Slurm jobs; 4 models = 32 jobs, so humans
+   launch it (above my 10-job cap).
+4. The pilot's `run_id` is readable (`pilot-<model>-<task>-r<k>`), not D's short hash; the
+   pilot is B's own tool, not a D9 episode.
+5. 32B on vLLM: bf16 needs an 80 GB A100. On a 40 GB card use `Qwen/Qwen3-32B-AWQ` as a
+   separate entry (a different quantization, so a separate row).
+
+## Known weaknesses (checkpoint 5)
+
+- Nothing has talked to a real vLLM, llama.cpp or Tinker server yet. Request fields that real
+  servers may reject or ignore: `chat_template_kwargs` and `cache_prompt` (llama.cpp, depends
+  on the build), `seed` (Tinker).
+- The `context_length` classification matches on error text, which differs between servers;
+  check it with one real overflow.
+- `--max-total-tokens` is checked before each run starts, so the cap can be overshot by up to
+  `--workers` runs.
+- Clean rate stays n/a until A's oracle lands and someone writes `oracle.json` for the runs.
+
 ## Known weaknesses (checkpoint 3)
 
 - `env` isolation does not confine the file system. On the Mac, a real model's `run_command`
@@ -305,3 +369,11 @@ tested only with scripted models and a fake OpenAI-compatible server (`test_agen
 
 1. IC-1, IC-2 and IC-3 are pending A's review.
 2. (closed) Docker mode: untested and not needed, since `netns` works on Colab/A100 and COOK.
+3. COOK: exact GGUF file names under `/nfs/opt/models` (models.yaml guesses
+   `Qwen3-<size>-Q4_K_M.gguf`); where `llama-server` lives (the job uses `$LLAMA_SERVER`, else
+   `llama-server` on PATH) and whether that build has `--jinja` and `--reasoning-format`;
+   whether `--gres=gpu:1` is the right GPU request.
+4. A100: 40 or 80 GB (decides the 32B entry); is `vllm` installed in the venv or a separate env?
+5. Tinker: which `tinker://` sampler paths to use for base Qwen3-8B/32B, whether
+   `/chat/completions` accepts `tools` (if so, switch to `tool_mode: native`), and the token
+   price, to set `MAX_TOKENS`.

@@ -1,7 +1,8 @@
 """Run one task once with a real model, benign (v1 skills, policy none). For checkpoint 3 and pilots.
 
-    CDB_MODELS=bench/harness/models.example.yaml \\
-        .venv/bin/python -m bench.harness.run_task ops-office-t05 --model qwen3-8b-ollama
+    .venv/bin/python -m bench.harness.run_task ops-office-t05 --model qwen3-8b-ollama
+
+Models come from bench/configs/models.yaml (or $CDB_MODELS).
 
 Writes runs/dev/<task>-<model>-<n>/ (trace.jsonl, meta.json, messages.json,
 success.json, mock.jsonl) and prints a summary. The summary never prints tool
