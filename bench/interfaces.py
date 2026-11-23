@@ -1,52 +1,64 @@
-"""Shared contract for ConsentDriftBench (Phase 2).
+"""Shared contract for ConsentDriftBench (Part 4 of the implementation prompt).
 
-The dataclasses and Protocols below are the interface contract from the
-IMPLEMENTATION_PROMPT, Part 4. They are written exactly as specified; do not
-change a signature, dataclass field or file format without an approved entry at
-the top of bench/INTERFACE_CHANGES.md (Part 0, rule 3).
+This is a JOINT file. The signatures below are copied from Part 4 verbatim and must
+not be changed without a proposal at the top of bench/INTERFACE_CHANGES.md and human
+approval. Every Protocol has a stub implementation so the whole pipeline runs end to
+end on stubs from day one (M0); real implementations live in each workstream's package
+and are swapped in, while these stubs stay for tests and --dry-run.
 
-Every interface also has a *stub* implementation here so the whole pipeline runs
-end to end from day one (Part 0, rule 4). Each workstream replaces the stubs with
-real code and keeps the stubs for tests / --dry-run.
+Seeded by Workstream A per Part 4; see bench/INTERFACE_CHANGES.md.
 """
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, Protocol
 
-# ---------------------------------------------------------------------------
-# Part 4 contract — write these exactly.
-# ---------------------------------------------------------------------------
-
 Decision = Literal["allow", "ask", "deny"]
 
 
+# --------------------------------------------------------------------------- #
+# Data models                                                                 #
+# --------------------------------------------------------------------------- #
 @dataclass(frozen=True)
 class Delegation:
-    read: tuple[str, ...]; write: tuple[str, ...]; exec: tuple[str, ...]
-    network: tuple[str, ...]; protected_data: tuple[str, ...]
+    read: tuple[str, ...]
+    write: tuple[str, ...]
+    exec: tuple[str, ...]
+    network: tuple[str, ...]
+    protected_data: tuple[str, ...]
 
 
 @dataclass(frozen=True)
 class Task:
-    repo_id: str; task_id: str; skill_id: str; prompt: str
-    delegation: Delegation; success_check: dict; reference_dir: Path
+    repo_id: str
+    task_id: str
+    skill_id: str
+    prompt: str
+    delegation: Delegation
+    success_check: dict
+    reference_dir: Path
 
 
 @dataclass(frozen=True)
 class SkillVersion:
-    repo_id: str; skill_id: str; version: str      # "v1", "benign_v2", or an attack id like "s21-seed-a-step_02"
-    root: Path                                     # directory holding the full snapshot
+    repo_id: str
+    skill_id: str
+    version: str          # "v1", "benign_v2", or an attack id like "s21-seed-a-step_02"
+    root: Path            # directory holding the full snapshot
 
 
 @dataclass(frozen=True)
 class Scenario:
-    repo_id: str; scenario_id: str; skill_id: str; task_id: str
-    companion_skill_id: str | None; benign_prefix: tuple[str, ...]
-    attack: dict; seed_ids: tuple[str, ...]
+    repo_id: str
+    scenario_id: str
+    skill_id: str
+    task_id: str
+    companion_skill_id: str | None
+    benign_prefix: tuple[str, ...]
+    attack: dict
+    seed_ids: tuple[str, ...]
 
 
 @dataclass
@@ -58,6 +70,9 @@ class OracleResult:
     problems: list[str] = field(default_factory=list)
 
 
+# --------------------------------------------------------------------------- #
+# Protocols                                                                    #
+# --------------------------------------------------------------------------- #
 class Oracle(Protocol):
     def judge(self, trace_path: Path, task: Task, canaries: list[dict]) -> OracleResult: ...
 
@@ -70,21 +85,29 @@ class MockNetwork(Protocol):
 
 @dataclass
 class ToolCall:
-    tool: str; args: dict
+    tool: str
+    args: dict
 
 
 class Policy(Protocol):
     name: str
+
     def on_update(self, approved: SkillVersion, new: SkillVersion, task: Task) -> tuple[Decision, str]: ...
     def on_tool_call(self, call: ToolCall, installed: SkillVersion, task: Task) -> Literal["allow", "block"]: ...
 
 
 @dataclass
 class RunSpec:
-    run_id: str; scenario: Scenario | None; task: Task
+    run_id: str
+    scenario: Scenario | None
+    task: Task
     installed: dict[str, SkillVersion]     # skill_id -> version to install
-    policy: Policy; model: str; invocation: Literal["natural", "explicit"]
-    mock_override: Path | None; out_dir: Path; seed: int
+    policy: Policy
+    model: str
+    invocation: Literal["natural", "explicit"]
+    mock_override: Path | None
+    out_dir: Path
+    seed: int
 
 
 class Harness(Protocol):
@@ -93,11 +116,13 @@ class Harness(Protocol):
 
 @dataclass
 class AttackFeedback:
-    decision: Decision; effect_happened: bool | None   # None if the agent was not run
+    decision: Decision
+    effect_happened: bool | None   # None if the agent was not run
 
 
 class Attacker(Protocol):
     name: str
+
     def proposals(self, scenario: Scenario, base: SkillVersion) -> "AttackSession": ...
 
 
@@ -106,28 +131,17 @@ class AttackSession(Protocol):
     def feedback(self, fb: AttackFeedback) -> None: ...
 
 
-# ---------------------------------------------------------------------------
-# Stub implementations — valid dummy values so the pipeline runs from day one.
-# Each workstream replaces its own stub(s) with real code (Part 0, rule 4).
-# ---------------------------------------------------------------------------
-
-
+# --------------------------------------------------------------------------- #
+# Stub implementations (keep for tests and --dry-run)                         #
+# --------------------------------------------------------------------------- #
 class StubOracle:
-    """Oracle stub (workstream A). Always returns a clean verdict."""
+    """Always returns a clean verdict. Replaced by bench.oracle.Oracle."""
 
     def judge(self, trace_path: Path, task: Task, canaries: list[dict]) -> OracleResult:
-        return OracleResult(
-            verdict="clean",
-            predicates=[],
-            attempts=[],
-            p5_match="none",
-            problems=[],
-        )
+        return OracleResult(verdict="clean", predicates=[], attempts=[], p5_match="none")
 
 
 class StubMockNetwork:
-    """Mock network stub (workstream A). Returns a dummy proxy URL, no-ops otherwise."""
-
     def start(self, repo_id: str, log_path: Path) -> str:
         return "http://127.0.0.1:0"
 
@@ -139,9 +153,7 @@ class StubMockNetwork:
 
 
 class StubPolicy:
-    """Policy stub (workstream C). Allows every update and every tool call."""
-
-    name = "stub"
+    name = "none"
 
     def on_update(self, approved: SkillVersion, new: SkillVersion, task: Task) -> tuple[Decision, str]:
         return ("allow", "stub: allow all")
@@ -151,42 +163,41 @@ class StubPolicy:
 
 
 class StubHarness:
-    """Harness stub (workstream B). Writes a minimal valid trace and meta.json."""
+    """Writes a minimal valid trace and meta.json so the pipeline runs on stubs."""
 
     def run(self, spec: RunSpec) -> Path:
+        import json
+
         spec.out_dir.mkdir(parents=True, exist_ok=True)
         trace_path = spec.out_dir / "trace.jsonl"
-        with trace_path.open("w") as fh:
-            fh.write(json.dumps({"seq": 0, "event": "run_end", "reason": "done", "steps": 0}) + "\n")
-        meta_path = spec.out_dir / "meta.json"
-        with meta_path.open("w") as fh:
-            json.dump(
-                {
-                    "run_id": spec.run_id,
-                    "model": spec.model,
-                    "invocation": spec.invocation,
-                    "observer": "none",
-                    "stub": True,
-                },
-                fh,
-            )
+        trace_path.write_text(
+            json.dumps({"seq": 1, "event": "run_end", "reason": "done", "steps": 0}) + "\n",
+            encoding="utf-8",
+        )
+        (spec.out_dir / "meta.json").write_text(
+            json.dumps({"run_id": spec.run_id, "model": spec.model, "observer": "none"}),
+            encoding="utf-8",
+        )
         return trace_path
 
 
 class StubAttackSession:
-    """Attack session stub (workstream D). Produces no updates."""
+    def __init__(self, base: SkillVersion) -> None:
+        self._base = base
+        self._done = False
 
     def next_update(self) -> SkillVersion | None:
-        return None
+        if self._done:
+            return None
+        self._done = True
+        return self._base
 
     def feedback(self, fb: AttackFeedback) -> None:
         return None
 
 
 class StubAttacker:
-    """Attacker stub (workstream D). Immediately-done session."""
-
-    name = "stub"
+    name = "static"
 
     def proposals(self, scenario: Scenario, base: SkillVersion) -> "AttackSession":
-        return StubAttackSession()
+        return StubAttackSession(base)

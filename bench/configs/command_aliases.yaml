@@ -1,0 +1,12 @@
+# Equivalent command invocations for D3 command matching (shared config; changes need approval).
+# Each entry says: a command whose argv starts with `match` is treated, for allow-listing, as
+# though it started with `canonical` (remaining args preserved). Anything not listed is judged
+# as written.
+#
+# Decided by: team. Seed entry is the example given in the implementation prompt (D3):
+# `python3 -m pytest` == `pytest`. Add entries only with team review.
+aliases:
+  - match: "python3 -m pytest"
+    canonical: "pytest"
+  - match: "python -m pytest"
+    canonical: "pytest"
