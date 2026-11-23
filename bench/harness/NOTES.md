@@ -6,7 +6,7 @@
 |---|---|
 | 1 sandbox builds a workspace and installs skills | **done** (env mode tested on macOS; netns and docker modes written, not yet run) |
 | 2 monitoring | **done** (green on Colab/A100 image and COOK `gtx`, both in `netns` mode, 2026-11-22) |
-| 3 agent loop | **code done**; t05 passes with a scripted model; real-model run on the Mac pending (needs `ollama pull qwen3:8b`) |
+| 3 agent loop | **code done**; t05 passes with a scripted model; real-model run **deferred to the pilot on COOK/Colab** (see checkpoint 3) |
 | 4 replay (with A) | not started |
 | 5 backends + pilot | not started |
 
@@ -248,6 +248,14 @@ absolute and normalised lexically, without following symlinks (module docstring;
   - System prompt and explicit invocation; Qwen3 parsing; the OpenAI client (structured and
     hermes calls, decoding params); dev-mock rules.
   - The structural D6 check is in `b_helpers.check_trace_v2` until A's schema lands.
+
+### Real-model run: deferred (2026-11-22)
+
+The planned local run of t05 with Qwen3-8B through Ollama on the Mac was dropped. `ollama pull
+qwen3:8b` (5.2 GB) ran at about 180 KB/s, roughly 8 hours, so it was stopped at about 1%. The
+first real-model run of the agent loop, including whether Qwen3's tool calls parse through a
+real server, moves to the pilot on COOK (llama.cpp) / Colab (vLLM), B5. Until then the loop is
+tested only with scripted models and a fake OpenAI-compatible server (`test_agent_loop.py`).
 
 ### Decisions B made in checkpoint 3 (please review)
 
