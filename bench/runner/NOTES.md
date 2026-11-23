@@ -4,8 +4,8 @@
 
 | checkpoint | state |
 |---|---|
-| 1 runner on stubs: dry run, resume after kill, sharding | **done, waiting for "continue"** |
-| 2 static attacker | not started |
+| 1 runner on stubs: dry run, resume after kill, sharding | done |
+| 2 static attacker reproduces seed installs byte for byte | **done, waiting for "continue"** |
 | 3 Slurm templates | not started |
 | 4 adaptive attackers | not started |
 | 5 sweeps | not started (needs M1 and a go-ahead) |
@@ -31,6 +31,25 @@ Branch `impl/d-attacks-runner`, cut from `origin/impl/c-policies` (it carries `r
 
 Verified: 18 tests pass; a real `kill -9` mid-sweep followed by a rerun finishes all 330 benign runs (80 were
 kept, the rest redone); the dry-run benign grid (330 episodes) and the one-scenario-per-repo attack grid run.
+
+## Checkpoint 2 — static attacker
+
+- `bench/attackers/static.py`: `StaticAttacker(seed_id, workdir)`; `proposals()` returns a session that
+  yields the seed's updates in order and exposes `mock_override` (path or None) for the runner.
+  Shapes handled: single `overlay/`, salami `step_NN/overlay/` (cumulative, built from the previous
+  *published* step, whatever the policy installed), late_binding (mock override, update is a no-op).
+- `.keep` files are ignored (placeholders for empty dirs). 8 late_binding seeds have a `.keep`-only overlay
+  and are therefore no-op updates; the runner logs them as `noop` and does not call the policy.
+- Version names: `<scenario short id>-seed-a`, `...-step_02` (e.g. `s20-seed-a-step_02`).
+- Seeds start from their own `base_version` (`v1`, `benign_v2` or `benign_v3`), not from the runner's
+  currently-approved version. If a policy denied a benign-prefix step, the attack update is still the seed's
+  published file set.
+- Test: all 200 seeds are rebuilt independently from the files on disk and compared per file hash with what
+  the attacker produced (every chain step); `repos/` is unchanged by replay. The full static grid
+  (200 seeds x 6 policies = 1200 episodes) runs in dry-run with 4 workers and no errors.
+- Dry-run attack-step decisions over the grid (real policies, stub agent): none 251 allow; pin_reapprove 219 ask /
+  32 allow; new_permissions_only 219 allow / 32 ask; capability_diff 176 allow / 75 ask; deny_by_default_manifest
+  219 allow / 32 deny; delegation_envelope 165 allow / 86 deny. (Counts are per update, not per run outcome.)
 
 ## Deviations from the prompt
 

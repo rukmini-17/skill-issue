@@ -64,14 +64,14 @@ class Components:
             return get_policy(name)       # C wires the model client; needs B's backend
         return get_policy(name)
 
-    def make_attacker(self, name: str, seed_id: str | None = None):
+    def make_attacker(self, name: str, seed_id: str | None = None, workdir: Path | None = None):
         if name == "stub":
             return StubAttacker()
         target = self.overrides.get(f"attacker:{name}") or DEFAULTS.get(f"attacker:{name}")
         if target is None:
             raise RuntimeError(f"unknown attacker {name!r}")
         cls = resolve(target)
-        return cls(seed_id=seed_id) if name == "static" else cls()
+        return cls(seed_id=seed_id, workdir=workdir) if name == "static" else cls()
 
 
 def build(dry_run: bool, overrides: dict[str, str] | None = None) -> Components:

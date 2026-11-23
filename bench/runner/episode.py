@@ -100,7 +100,7 @@ def run_episode(key: EpisodeKey, comps: Components, runs_dir: Path, workdir: Pat
     if key.kind == "attack":
         for name in scenario.benign_prefix:
             offer("benign_prefix", repo.skills[task.skill_id][name])
-        attacker = comps.make_attacker(key.attacker, key.seed_id)
+        attacker = comps.make_attacker(key.attacker, key.seed_id, workdir / run_id)
         session = attacker.proposals(scenario, approved)
         while (new := session.next_update()) is not None:
             d = offer("attack", new)
@@ -154,4 +154,5 @@ def run_episode(key: EpisodeKey, comps: Components, runs_dir: Path, workdir: Pat
     except Exception as e:                           # a bad trace must never crash the sweep
         result = OracleResult("unjudgeable", [], [], "none", [f"oracle error: {type(e).__name__}: {e}"])
     _write_json(out_dir / "oracle.json", asdict(result))
+    shutil.rmtree(workdir / run_id, ignore_errors=True)       # materialised attack versions
     return {"run_id": run_id, "status": "reused" if reused_from else "ran", "verdict": result.verdict}
