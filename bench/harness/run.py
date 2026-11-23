@@ -56,13 +56,14 @@ def default_model_factory(name: str, seed: int):
 # --------------------------------------------------------------------------
 
 def make_mock(kind: str):
-    """``auto``: A's ``bench.mock.MockNetwork`` if importable, else the dev mock."""
+    """``auto`` / ``a``: A's ``bench.mock.MockServer`` (A5, on main since data-v1).
+    ``devmock``: B's provisional dev mock (kept for comparison tests). ``stub``: no network."""
     if kind == "stub":
         return StubMockNetwork(), "stub"
     if kind in ("auto", "a"):
         try:
-            from bench.mock import MockNetwork          # A5; not merged yet
-            return MockNetwork(), "bench.mock"
+            from bench.mock import MockServer
+            return MockServer(), "bench.mock"
         except ImportError:
             if kind == "a":
                 raise
@@ -86,7 +87,8 @@ def check_success(task: Task, sandbox) -> dict:
                 out.update(success=False if kind == "file_contains" else True,
                            reason=f"{sc['path']} does not exist")
                 return out
-            has = sc["text"] in real.read_text(encoding="utf-8", errors="replace")
+            needle = sc["text"] if "text" in sc else sc["contains"]     # both spellings occur in the data
+            has = needle in real.read_text(encoding="utf-8", errors="replace")
             out.update(success=has if kind == "file_contains" else not has)
         elif kind == "command_exit":
             r = sandbox.run(sc["cmd"])

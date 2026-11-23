@@ -7,7 +7,7 @@
 | 1 sandbox builds a workspace and installs skills | **done** (env mode tested on macOS; netns and docker modes written, not yet run) |
 | 2 monitoring | **done** (green on Colab/A100 image and COOK `gtx`, both in `netns` mode, 2026-11-22) |
 | 3 agent loop | **code done**; t05 passes with a scripted model; real-model run **deferred to the pilot on COOK/Colab** (see checkpoint 3) |
-| 4 replay (with A) | not started; joint A+B step, done later together (skipped ahead to 5 on the team's request) |
+| 4 replay (with A) | **replay done** (2026-11-23) with A's real oracle and mock: 34/55 clean in env and netns (identical); 21 false violations listed for A in `REPLAY_FINDINGS.md` |
 | 5 backends + pilot | **code done** (2026-11-23); tested against a fake server only; pilot **not launched** (humans launch) |
 
 ## Checkpoint 1 — what was built
@@ -289,6 +289,29 @@ tested only with scripted models and a fake OpenAI-compatible server (`test_agen
 - `connect()` attempts to the proxy port from a *different* local process are not
   distinguishable from proxy use.
 - Docker on macOS (Docker Desktop) is untested; Docker Desktop would not start on the dev Mac.
+
+## Checkpoint 4 — reference replay (2026-11-23)
+
+- Merged `main` (data-v1 + A's oracle, mock, match, loaders, check_data) at `ea17394`;
+  `interfaces.py` and `bench/__init__.py` taken from main. B tests after the merge: 89 passed,
+  9 skipped on the Mac; 115 passed, 1 skipped in the Linux container (live strace and netns).
+- `make_mock("auto")` now uses A's `bench.mock.MockServer` (it was looking for a
+  `MockNetwork` class name and would have fallen back to the dev mock).
+- `bench/harness/replay.py`: `plan_reference` (solve.sh -> tool calls), `ScriptedAgent`
+  (a `ChatModel`, so replay goes through the same loop, executor, monitor and trace writer),
+  `replay_task` (harness run + `Oracle.judge` + per-line attribution), CLI and report rendering.
+  Tests: `bench/tests/b/test_replay.py`.
+- `bench/harness/docker/Dockerfile.linux` + `scripts/replay_docker.sh`: a local Linux
+  container (privileged, developer machine only) that gives the Mac strace and netns.
+- `check_success` accepts both `text` and `contains` (both occur in the task data).
+- Result: 34/55 clean, identical in env and netns. Findings F1–F11 for A in
+  `bench/harness/REPLAY_FINDINGS.md`. F10 (mock serves from `repos/` instead of the sandbox
+  copy, so shop-web's npm tarballs are missing) needs IC-1.
+- B-side question raised by F9: the monitor records `mkdir` as `fs_write` (op `create`) of the
+  directory; A and B to agree on how the matcher treats ancestor directories of allowed targets.
+- Slip: while diagnosing F10 I printed `repos/shop-web/workspace/.npmrc` to the terminal,
+  which shows a (fake) canary value. Rule 12 says canaries are secrets in terminal output;
+  nothing was written to files or sent anywhere.
 
 ## Checkpoint 5 — backends and pilot scripts (2026-11-23)
 
