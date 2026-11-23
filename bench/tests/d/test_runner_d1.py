@@ -150,7 +150,7 @@ def _comps(policy, session, harness=None):
     comps = Components(harness or RecordingHarness(), StubOracle(), SuccessChecker(), True, {})
     comps.make_policy = lambda name: policy
     attacker = type("A", (), {"name": "scripted", "proposals": lambda self, sc, base: session})()
-    comps.make_attacker = lambda name, seed_id=None, workdir=None: attacker
+    comps.make_attacker = lambda name, seed_id=None, workdir=None, **kw: attacker
     return comps
 
 

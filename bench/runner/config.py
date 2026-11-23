@@ -19,6 +19,7 @@ KINDS = ("attack", "benign_updates", "task_completion")
 # Attackers that replay a fixed seed (one run per seed). Adaptive attackers search from the
 # scenario, so seed is not a grid dimension for them.
 SEEDED_ATTACKERS = ("static",)
+ADAPTIVE_ATTACKERS = ("black_box_adaptive", "policy_aware_adaptive")
 # Attackers that need no search against a given policy: `none` has nothing to evade (D13).
 NO_SEARCH_POLICIES = ("none",)
 
@@ -64,7 +65,8 @@ class ExperimentConfig:
     invocations: list[str] = field(default_factory=lambda: ["natural"])
     repeats: int = 1
     budget: int = 50                           # adaptive proposals per scenario per policy (D13)
-    components: dict[str, str] = field(default_factory=dict)  # optional dotted-path overrides
+    stop_at_bypass: bool = True                # adaptive: end a search at its first bypass (queries-to-first-bypass, D10)
+    components: dict[str, str] = field(default_factory=dict)  # optional dotted-path overrides ("proposer": "pkg.mod:Class")
 
     @classmethod
     def load(cls, path: Path) -> "ExperimentConfig":

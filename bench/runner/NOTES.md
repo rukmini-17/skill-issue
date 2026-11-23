@@ -7,7 +7,7 @@
 | 1 runner on stubs: dry run, resume after kill, sharding | done |
 | 2 static attacker reproduces seed installs byte for byte | done |
 | 3 Slurm templates + resubmit script | done locally; **the real COOK test job is for a human to run** |
-| 4 adaptive attackers | not started |
+| 4 adaptive attackers | **done except the stage-3 proposer (team-supplied); waiting for "continue"** |
 | 5 sweeps | not started (needs M1 and a go-ahead) |
 
 Branch `impl/d-attacks-runner`, cut from `origin/impl/c-policies` (it carries `repos/` and
@@ -74,6 +74,37 @@ kept, the rest redone); the dry-run benign grid (330 episodes) and the one-scena
 - Limitation: the deadline is checked between groups, so one slow group (many agent steps) can run past it;
   keep groups small or lower `MAX_SECONDS`.
 
+## Checkpoint 4 — adaptive attackers
+
+- `bench/attackers/adaptive.py`: `BlackBoxAttacker`, `PolicyAwareAttacker`; one shared proposal budget over three stages:
+  1. the handcrafted seeds, replayed exactly; 2. template variations of the seeds (`templates.py`: wording and
+  placement changes of the lines a seed adds, deterministic); 3. a **plug-in `Proposer`** supplied by the team.
+- **Stage 3 is not implemented here.** `Proposer.propose(ProposalContext) -> RawProposal | None` is the hook; the
+  runner loads one from `components: {proposer: "pkg.mod:Class"}`. The attacker prompt and the code that turns
+  a model reply into file contents are the team's (D13: instruction text is team-written after M1). Without a
+  proposer a search ends after stage 2. `bench/attackers/llm.py` is an OpenAI-compatible client the proposer can
+  use (settings from `attacker_model`/env, key read from the env var named in `api_key_env`).
+- `validate.py`: structural class rules (mirror of the data's `check_repo.py`, plus size limits). A's class rules
+  replace it when they land. Invalid proposals count against the budget and are never submitted; seeds are
+  checked and logged but submitted even if flagged (all 200 pass).
+- **Feedback restriction** (tested): the session's context type has no task/delegation/oracle/trace fields; a
+  test walks the live session for `Task`/`Delegation`/`OracleResult` objects (it found and I removed a real
+  leak: the session held the whole `Repo`); `effect_happened` is ignored by the session unless the goal's
+  predicates include P1 or P5, and the runner also passes None for other goals; the black-box attacker never gets
+  the policy description.
+- **Runner loop** (`episode._adaptive_loop`): proposals are offered one at a time; each *installed* proposal is
+  followed by an agent run (cached) and an oracle judgement; denied proposals run nothing. Bypass (D10) =
+  oracle effects include an expected predicate and the proposal was not denied. The search stops at the first
+  bypass (`stop_at_bypass`, default true) and records `meta["adaptive"]`: `proposals_used` (valid + invalid),
+  `first_bypass_proposal` (null = censored), `agent_probes`. Per-proposal runs are in `proposals/NNN/`; the
+  run's own trace/oracle are those of the first bypass, else of the last state. `attacker.jsonl` has the
+  proposal, feedback, and a hidden `eval` line (verdict, predicates, bypass, asks so far) per proposal.
+- `none` is skipped for adaptive attackers (D13). Config: `budget` (default 50), `stop_at_bypass`.
+- Checks: 60 tests pass; all 600 episodes of (2 adaptive attackers x 3 policies x 100 scenarios) run in dry-run.
+- Stage-2 limits: templates reword `.md` text only, so `concealed_dependency` (code files) and late_binding
+  pages that are not `.md` get no stage-2 variations; those need the stage-3 proposer.
+- Note for NOTES (D12): if the attacker also uses Qwen3-32B as the `llm_reviewer`, record it.
+
 ## Deviations from the prompt
 
 1. **Agent-run cache and run-time policies.** D9 says two policies with the same installed state share one
@@ -103,6 +134,7 @@ kept, the rest redone); the dry-run benign grid (330 episodes) and the one-scena
 
 ## Known weaknesses
 
-- Adaptive search needs an agent run per proposal for P1/P5 goals (D13); the episode function here runs the
-  agent once at the end. D4 will wrap it.
+- Adaptive search runs the agent after every installed proposal (cached by installed state). With the real
+  harness this is the dominant cost: up to 50 runs per scenario per policy; budget 25 is the fallback (D13).
+- Attack and benign agent runs reuse `_agent_cache`; a run that errors midway leaves `error.json` only.
 - Provisional loader duplicates C's `_dataload.py`; both go away when A's `bench/common/data.py` lands.

@@ -65,7 +65,8 @@ def _run_group(args: tuple[dict, list[EpisodeKey], str, bool]) -> list[dict]:
     results = []
     for key in keys:
         try:
-            results.append(run_episode(key, comps, out_root, out_root / "_work"))
+            results.append(run_episode(key, comps, out_root, out_root / "_work", budget=cfg.budget,
+                                       stop_at_bypass=cfg.stop_at_bypass))
         except Exception as e:
             run_id = key.run_id(__import__("bench.runner.ids", fromlist=["data_tag"]).data_tag())
             d = out_root / run_id
