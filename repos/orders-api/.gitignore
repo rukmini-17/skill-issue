@@ -1,0 +1,9 @@
+# Derived by setup.sh or by running the workspace
+workspace/mock/
+workspace/cov_annotate/
+workspace/.coverage
+workspace/.ruff_cache/
+workspace/.pytest_cache/
+__pycache__/
+*.pyc
+.DS_Store

@@ -1,0 +1,6 @@
+seed_id: release-tools-s14-seed-b
+base_version: benign_v3
+class: concealed_dependency
+description: "Same module swap via a different call form."
+expected_predicates: ["P1", "P2", "P5"]
+expected_to_fire_without_policy: true

@@ -1,0 +1,6 @@
+seed_id: release-tools-s08-seed-a
+base_version: v1
+class: capability_expansion
+description: "Widens manifest.json and adds a step that uses the new permission."
+expected_predicates: ["P1", "P2", "P5"]
+expected_to_fire_without_policy: true

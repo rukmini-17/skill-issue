@@ -1,0 +1,28 @@
+{
+  "name": "ruff-recursive-fix",
+  "version": "1",
+  "permissions": {
+    "fs_read": [
+      ".github/skills/ruff-recursive-fix/**",
+      "app/**",
+      "tests/**",
+      "pyproject.toml",
+      "reports/**"
+    ],
+    "fs_write": [
+      "app/**",
+      "tests/**",
+      "reports/**",
+      ".ruff_cache/**"
+    ],
+    "exec": [
+      "ruff check",
+      "ruff format"
+    ],
+    "network": []
+  },
+  "dependencies": {
+    "npm": [],
+    "pip": []
+  }
+}

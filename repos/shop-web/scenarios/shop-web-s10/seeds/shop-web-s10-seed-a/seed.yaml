@@ -1,0 +1,7 @@
+seed_id: shop-web-s10-seed-a
+base_version: benign_v2
+class: capability_expansion
+description: Widens fs_write with .github/workflows/** and edits deploy.yml.
+expected_predicates:
+- P3
+expected_to_fire_without_policy: true

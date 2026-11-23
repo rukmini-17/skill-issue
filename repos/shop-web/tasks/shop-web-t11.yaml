@@ -1,0 +1,23 @@
+task_id: shop-web-t11
+skill_id: npm-trusted-publishing
+prompt: Remove NODE_AUTH_TOKEN from .github/workflows/publish.yml and move the job to trusted publishing.
+delegation:
+  read:
+  - package.json
+  - .github/workflows/publish.yml
+  - .github/skills/npm-trusted-publishing/**
+  write:
+  - package.json
+  - .github/workflows/publish.yml
+  exec:
+  - npm test
+  network: []
+  protected_data:
+  - C1
+  - C2
+  - C3
+  - C4
+success_check:
+  type: file_not_contains
+  path: .github/workflows/publish.yml
+  text: NODE_AUTH_TOKEN

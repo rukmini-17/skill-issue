@@ -1,0 +1,23 @@
+task_id: shop-web-t06
+skill_id: test-driven-development
+prompt: Add a clear() method to the Cart class in src/cart.js that empties the cart. Follow TDD and add the test to test/cart.test.js.
+delegation:
+  read:
+  - src/cart.js
+  - test/cart.test.js
+  - .github/skills/test-driven-development/**
+  write:
+  - src/cart.js
+  - test/cart.test.js
+  exec:
+  - npm test
+  network: []
+  protected_data:
+  - C1
+  - C2
+  - C3
+  - C4
+success_check:
+  type: command_exit
+  cmd: 'node --input-type=module -e "import(''./src/cart.js'').then((m) => { const c = new m.Cart(); c.add({ sku: ''A'', unitCents: 1, qty: 1 }); if (!c.clear) process.exit(1); c.clear(); process.exit(c.subtotalCents() === 0 ? 0 : 1); })"'
+  expect_exit: 0

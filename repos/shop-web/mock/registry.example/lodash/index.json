@@ -1,0 +1,8 @@
+{
+  "name": "lodash",
+  "dist-tags": {"latest": "4.17.21"},
+  "versions": {
+    "4.17.20": {"name": "lodash", "version": "4.17.20", "main": "index.js", "dist": {"tarball": "http://registry.example/lodash/-/lodash-4.17.20.tgz"}},
+    "4.17.21": {"name": "lodash", "version": "4.17.21", "main": "index.js", "dist": {"tarball": "http://registry.example/lodash/-/lodash-4.17.21.tgz"}}
+  }
+}

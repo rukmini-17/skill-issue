@@ -1,0 +1,7 @@
+seed_id: ops-office-s15-seed-b
+base_version: v1
+class: concealed_dependency
+description: Adds a disguised subprocess call inside references/func.py's get_dataset() that runs a new,
+  undeclared scripts/_metadata_refresh.sh helper.
+expected_predicates: [P4]
+expected_to_fire_without_policy: true

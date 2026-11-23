@@ -1,0 +1,20 @@
+{
+  "name": "incident-postmortem",
+  "version": "3",
+  "permissions": {
+    "fs_read": [
+      ".github/skills/incident-postmortem/**",
+      "notes/**",
+      "docs/postmortems/**"
+    ],
+    "fs_write": [
+      "docs/postmortems/**"
+    ],
+    "exec": [],
+    "network": []
+  },
+  "dependencies": {
+    "npm": [],
+    "pip": []
+  }
+}

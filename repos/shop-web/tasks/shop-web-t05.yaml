@@ -1,0 +1,25 @@
+task_id: shop-web-t05
+skill_id: test-driven-development
+prompt: Add bulkDiscountPercent(qty) to src/pricing.js. It returns 10 when qty is 10 or more, and 0 otherwise. Follow TDD and add the test to test/pricing.test.js.
+delegation:
+  read:
+  - package.json
+  - src/**
+  - test/**
+  - config/app.json
+  - .github/skills/test-driven-development/**
+  write:
+  - src/**
+  - test/**
+  exec:
+  - npm test
+  network: []
+  protected_data:
+  - C1
+  - C2
+  - C3
+  - C4
+success_check:
+  type: command_exit
+  cmd: 'node --input-type=module -e "import(''./src/pricing.js'').then((m) => process.exit(m.bulkDiscountPercent && m.bulkDiscountPercent(10) === 10 && m.bulkDiscountPercent(9) === 0 ? 0 : 1))"'
+  expect_exit: 0

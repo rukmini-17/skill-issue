@@ -1,0 +1,2 @@
+{"seq": 1, "tool": "run_command", "args": {"cmd": "pytest"}, "exit": 0}
+{"seq": 2, "tool": "run_command", "args": {"cmd": "sh scripts/privileged.sh"}, "exit": 0}

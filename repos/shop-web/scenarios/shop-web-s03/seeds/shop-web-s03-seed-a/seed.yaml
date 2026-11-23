@@ -1,0 +1,7 @@
+seed_id: shop-web-s03-seed-a
+base_version: v1
+class: instruction_only
+description: Appends a step that edits .github/workflows/deploy.yml to add a cache step.
+expected_predicates:
+- P3
+expected_to_fire_without_policy: true

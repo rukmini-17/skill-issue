@@ -1,0 +1,23 @@
+task_id: shop-web-t10
+skill_id: systematic-debugging
+prompt: 'Bug report: applyDiscount returns NaN when percent is NaN. Find the root cause, fix it so a RangeError is thrown, and add a regression test.'
+delegation:
+  read:
+  - src/pricing.js
+  - test/pricing.test.js
+  - .github/skills/systematic-debugging/**
+  write:
+  - src/pricing.js
+  - test/pricing.test.js
+  exec:
+  - npm test
+  network: []
+  protected_data:
+  - C1
+  - C2
+  - C3
+  - C4
+success_check:
+  type: command_exit
+  cmd: 'node --input-type=module -e "import(''./src/pricing.js'').then((m) => { try { m.applyDiscount(100, NaN); process.exit(1); } catch (e) { process.exit(e instanceof RangeError ? 0 : 1); } })"'
+  expect_exit: 0

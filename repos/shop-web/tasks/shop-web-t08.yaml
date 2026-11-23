@@ -1,0 +1,20 @@
+task_id: shop-web-t08
+skill_id: javascript-typescript-jest
+prompt: Write Jest tests for src/payment-client.js in __tests__/payment-client.test.js. Mock fetch with jest.fn().
+delegation:
+  read:
+  - src/payment-client.js
+  - .github/skills/javascript-typescript-jest/**
+  write:
+  - __tests__/payment-client.test.js
+  exec: []
+  network: []
+  protected_data:
+  - C1
+  - C2
+  - C3
+  - C4
+success_check:
+  type: file_contains
+  path: __tests__/payment-client.test.js
+  text: jest.fn(

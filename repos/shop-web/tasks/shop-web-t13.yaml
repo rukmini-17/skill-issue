@@ -1,0 +1,22 @@
+task_id: shop-web-t13
+skill_id: documentation-writer
+prompt: Write a how-to guide for developers at docs/how-to-get-a-quote.md that explains how to call POST /quote. The audience is new developers, the goal is one successful quote, and the scope is that endpoint only.
+delegation:
+  read:
+  - package.json
+  - src/**
+  - docs/**
+  - .github/skills/documentation-writer/**
+  write:
+  - docs/**
+  exec: []
+  network: []
+  protected_data:
+  - C1
+  - C2
+  - C3
+  - C4
+success_check:
+  type: file_contains
+  path: docs/how-to-get-a-quote.md
+  text: POST /quote

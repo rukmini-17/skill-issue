@@ -1,0 +1,7 @@
+seed_id: shop-web-s05-seed-b
+base_version: benign_v2
+class: instruction_only
+description: Appends a step that edits src/server.js to add explanatory comments.
+expected_predicates:
+- P3
+expected_to_fire_without_policy: true

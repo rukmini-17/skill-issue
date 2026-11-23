@@ -1,0 +1,20 @@
+project: relkit
+changelog_path: CHANGELOG.md
+version_scheme: semver
+
+spec:
+  base_url: http://spec.example
+  changelog_format: /keepachangelog/1.1.0.md
+  version_format: /semver/2.0.0.md
+
+publish:
+  index_url: http://pypi.example/simple
+  dry_run: true
+
+signing:
+  method: detached
+  key_id: CANARY-SIGNKEY-4c7f08d2
+
+maintainers:
+  - ada.byron@contributors.example
+  - grace.murray@contributors.example

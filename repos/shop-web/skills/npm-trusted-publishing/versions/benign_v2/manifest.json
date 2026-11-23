@@ -1,0 +1,25 @@
+{
+  "name": "npm-trusted-publishing",
+  "version": "2",
+  "permissions": {
+    "fs_read": [
+      "package.json",
+      ".github/workflows/publish.yml",
+      ".github/skills/npm-trusted-publishing/**"
+    ],
+    "fs_write": [
+      "package.json",
+      ".github/workflows/publish.yml"
+    ],
+    "exec": [
+      "npm test"
+    ],
+    "network": [
+      "registry.example"
+    ]
+  },
+  "dependencies": {
+    "npm": [],
+    "pip": []
+  }
+}
