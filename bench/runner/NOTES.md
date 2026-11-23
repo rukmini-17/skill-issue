@@ -5,8 +5,8 @@
 | checkpoint | state |
 |---|---|
 | 1 runner on stubs: dry run, resume after kill, sharding | done |
-| 2 static attacker reproduces seed installs byte for byte | **done, waiting for "continue"** |
-| 3 Slurm templates | not started |
+| 2 static attacker reproduces seed installs byte for byte | done |
+| 3 Slurm templates + resubmit script | done locally; **the real COOK test job is for a human to run** |
 | 4 adaptive attackers | not started |
 | 5 sweeps | not started (needs M1 and a go-ahead) |
 
@@ -50,6 +50,29 @@ kept, the rest redone); the dry-run benign grid (330 episodes) and the one-scena
 - Dry-run attack-step decisions over the grid (real policies, stub agent): none 251 allow; pin_reapprove 219 ask /
   32 allow; new_permissions_only 219 allow / 32 ask; capability_diff 176 allow / 75 ask; deny_by_default_manifest
   219 allow / 32 deny; delegation_envelope 165 allow / 86 deny. (Counts are per update, not per run outcome.)
+
+## Checkpoint 3 — Slurm
+
+- `bench/runner/slurm/run_shard.sbatch`: one array task = one shard (`--shard $SLURM_ARRAY_TASK_ID/$NSHARDS`),
+  2 h limit, runs the runner with `--max-seconds 6300` so it stops *starting* groups with 15 min to spare and
+  exits 0; SIGTERM (Slurm's time-limit warning) is honoured the same way. Optional model-server block
+  (`LLAMA_SERVER_CMD`) for real jobs.
+- `bench/runner/shards.py` (+ `slurm/resubmit.sh` wrapper): lists per-shard progress (a shard is complete when
+  all its runs have `oracle.json`), and with `--resubmit` builds the `sbatch --array=<incomplete shards>` command;
+  `--submit` actually runs it, refusing more than `--max-jobs` (10) array tasks.
+- Runner: `--max-seconds`, SIGTERM handling, and a per-shard marker `_shards/<i>of<n>.json`
+  (says the process ended; completeness is judged from `oracle.json`).
+- Tested without Slurm: the sbatch script is run by `bash` with Slurm's variables set, a fake `sbatch` records
+  what would be submitted, the job-cap refusal, deadline stop and rerun. 38 tests pass.
+- **Not tested on COOK.** Things we do not know and the script does not assume: GPU request (`--gres`, pass
+  `--gres` to `shards.py`), module loads, where the venv lives (`VENV`), the partition names beyond the prompt's
+  gtx/t4/rtx. Lines marked `CHECK` in `run_shard.sbatch` need a human on the cluster.
+- For the tiny job (one scenario, three policies, stub everything), from the repo root on a COOK login node
+  after creating the venv:
+  `python -m bench.runner.shards bench/configs/experiments/slurm_tiny.yaml --shards 1 --dry-run --resubmit --submit`
+  then check with `squeue -u $USER` and `ls runs/slurm_tiny/*/oracle.json | wc -l` (expect 3).
+- Limitation: the deadline is checked between groups, so one slow group (many agent steps) can run past it;
+  keep groups small or lower `MAX_SECONDS`.
 
 ## Deviations from the prompt
 

@@ -17,10 +17,13 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--dry-run", action="store_true", help="stub harness, oracle and mock network; no model, no sandbox")
     ap.add_argument("--shard", help="i/n: run only shard i of n (0-based)")
     ap.add_argument("--workers", type=int, default=1, help="local worker processes (A100 mode)")
+    ap.add_argument("--max-seconds", type=float, default=None,
+                    help="stop starting new work after this many seconds and exit 0 (Slurm: leave margin under the limit)")
     ap.add_argument("--runs-dir", type=Path, default=REPO_ROOT / "runs", help="output root (default: runs/)")
     args = ap.parse_args(argv)
     cfg = ExperimentConfig.load(args.experiment)
-    summary = run_experiment(cfg, args.runs_dir, dry_run=args.dry_run, shard=parse_shard(args.shard), workers=args.workers)
+    summary = run_experiment(cfg, args.runs_dir, dry_run=args.dry_run, shard=parse_shard(args.shard), workers=args.workers,
+                             max_seconds=args.max_seconds)
     print(json.dumps(summary, indent=2))
     return 1 if summary.get("error") else 0
 

@@ -8,6 +8,8 @@ so the agent-run cache is only ever used by one worker at a time. A failed episo
 from __future__ import annotations
 
 import json
+import signal
+import time
 import traceback
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
@@ -38,6 +40,23 @@ def select_groups(keys: list[EpisodeKey], shard: tuple[int, int]) -> list[list[E
     return [groups[g] for g in sorted(groups) if int(short_hash(g, n=8), 16) % n == i]
 
 
+class Deadline:
+    """Stops *starting* new groups after ``max_seconds`` or after SIGTERM (Slurm's time-limit warning)."""
+
+    def __init__(self, max_seconds: float | None):
+        self.end = time.time() + max_seconds if max_seconds is not None else None
+        self.term = False
+
+    def install_sigterm(self) -> None:
+        try:
+            signal.signal(signal.SIGTERM, lambda *_: setattr(self, "term", True))
+        except ValueError:                    # not the main thread
+            pass
+
+    def expired(self) -> bool:
+        return self.term or (self.end is not None and time.time() >= self.end)
+
+
 def _run_group(args: tuple[dict, list[EpisodeKey], str, bool]) -> list[dict]:
     cfg_dict, keys, runs_dir, dry_run = args
     cfg = ExperimentConfig(**cfg_dict)
@@ -57,21 +76,46 @@ def _run_group(args: tuple[dict, list[EpisodeKey], str, bool]) -> list[dict]:
     return results
 
 
+def shard_marker(runs_dir: Path, shard: tuple[int, int]) -> Path:
+    return runs_dir / "_shards" / f"{shard[0]}of{shard[1]}.json"
+
+
 def run_experiment(cfg: ExperimentConfig, runs_root: Path, *, dry_run: bool = False,
-                   shard: tuple[int, int] = (0, 1), workers: int = 1) -> dict:
+                   shard: tuple[int, int] = (0, 1), workers: int = 1, max_seconds: float | None = None) -> dict:
     runs_dir = Path(runs_root) / cfg.name
     runs_dir.mkdir(parents=True, exist_ok=True)
     keys = list(expand(cfg))
     groups = select_groups(keys, shard)
     jobs = [(cfg.__dict__, g, str(runs_dir), dry_run) for g in groups]
+    deadline = Deadline(max_seconds)
+    deadline.install_sigterm()
+    nested: list[list[dict]] = []
+    stopped_early = False
     if workers > 1 and len(jobs) > 1:
         with ProcessPoolExecutor(max_workers=workers) as ex:
-            nested = list(ex.map(_run_group, jobs))
+            pending = list(jobs)
+            futures = []
+            while pending or futures:
+                while pending and len(futures) < workers and not deadline.expired():
+                    futures.append(ex.submit(_run_group, pending.pop(0)))
+                if not futures:
+                    break
+                nested.append(futures.pop(0).result())
+            stopped_early = bool(pending)
     else:
-        nested = [_run_group(j) for j in jobs]
+        for j in jobs:
+            if deadline.expired():
+                stopped_early = True
+                break
+            nested.append(_run_group(j))
     results = [r for part in nested for r in part]
     counts: dict[str, int] = defaultdict(int)
     for r in results:
         counts[r["status"]] += 1
-    return {"experiment": cfg.name, "runs_dir": str(runs_dir), "grid_size": len(keys),
-            "selected": sum(len(g) for g in groups), "shard": f"{shard[0]}/{shard[1]}", **counts}
+    summary = {"experiment": cfg.name, "runs_dir": str(runs_dir), "grid_size": len(keys),
+               "selected": sum(len(g) for g in groups), "shard": f"{shard[0]}/{shard[1]}",
+               "stopped_early": stopped_early, **counts}
+    marker = shard_marker(runs_dir, shard)          # "this shard process finished"; completeness is checked
+    marker.parent.mkdir(exist_ok=True)              # against oracle.json files by bench.runner.shards
+    marker.write_text(json.dumps({**summary, "finished_at": time.time()}, indent=2))
+    return summary
