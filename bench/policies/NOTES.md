@@ -7,8 +7,9 @@
   - `none`, `pin_reapprove`, `new_permissions_only`, `capability_diff`,
     `deny_by_default_manifest`, `delegation_envelope`, `llm_reviewer`.
   - Each module docstring is a plain-language description of its rule (read by D's policy-aware attacker).
-  - `_capabilities.py` — manifest loading, file hashing, glob subsumption, and the capability extractor (ported from `check_repo.py`).
-  - `_runtime.py` — D2–D4 matching applied to a `ToolCall` (used by the two runtime policies).
+  - `_capabilities.py` — manifest loading, file hashing, the capability extractor (D12), and glob subsumption on top of A's `bench.common.match`.
+  - `_runtime.py` — D2–D4 matching applied to a `ToolCall`, delegating to A's `bench.common.match`.
+  - `_dataload.py` — C2/C3 data views (task/skill/scenario lookups, seed→update transitions) on top of A's `bench.common.data`.
   - `__init__.py` — `get_policy(name, **kwargs)` registry.
   - `prompts/llm_reviewer.md` — DRAFT reviewer prompt, needs team review.
 
@@ -37,19 +38,27 @@ from the version's repo.
   D12 ("build the list from `workspace/`") and is the price of not running `setup.sh`
   inside a static policy.
 
-## Deviations from the prompt (need noting / later reconciliation)
+## Matching / data: now on A's shared code (swap done)
 
-1. **Matching lives in `bench/policies/_capabilities.py` + `_runtime.py`, not `bench/common/match.py`.**
-   C1 says to reuse `common/match.py` (workstream A). That module does not exist yet and is A's lane. To avoid blocking C, the glob/command/network matching is provisional here. **Seam to swap when A ships:** `_capabilities.glob_within/capabilities/file_hashes` and `_runtime.tool_call_allowed`. The provisional path matcher does lexical `..`/`.` resolution only — no symlink/real-path resolution (D2), because `on_tool_call` does not have the live workspace root. A's matcher should replace this.
-   - **D2/D3 rules implemented in the provisional matcher (C3):** `dir/**` matches
-     `dir` itself (so `list_dir("dir")` under a `dir/**` grant is allowed); absolute
-     paths are rejected outright; command splitting is quote-aware (`echo "a;b"` is one
-     command); command substitutions (`$(...)`, backticks) are checked as their own
-     commands; output redirections (`>`,`>>`,`&>`,`>|`) are writes and input
-     redirections (`<`) are reads, checked against the write/read grant. `exec` argv
-     prefix-matching is unchanged. **Not yet done (A's `match.py`):** `$(...)`-vs-real
-     symlink resolution, `command_aliases.yaml` (e.g. `python3 -m pytest` = `pytest`),
-     and `implicit_effects.yaml`. Covered by `bench/tests/c/test_matching.py`.
+The provisional matcher and data loader have been replaced by A's shared modules now
+that they have landed on `main` (tagged `data-v1`):
+
+- **Matching → `bench.common.match` (A).** `_runtime.py` and `_capabilities.path_matches`
+  delegate to A's `path_matches`/`path_allowed`/`host_allowed`/`command_allowed`/
+  `extract_redirections`. The D2/D3 rules are A's (identical to what C had implemented):
+  `dir/**` covers `dir` itself; absolute paths rejected; quote-aware command splitting;
+  `$(...)`/backtick substitutions checked as their own commands; `>`/`>>`/`&>`/`>|`/`N>`
+  writes and `<` reads checked against the write/read grant; `exec` argv-prefix match.
+  A's matcher additionally brings `command_aliases.yaml` (e.g. `python3 -m pytest` ==
+  `pytest`) and real symlink resolution when given a live workspace root (runtime checks
+  still pass no root, so they resolve `.`/`..` lexically — symlink escapes remain the
+  oracle's job, per D2). Covered by `bench/tests/c/test_matching.py`.
+- **Data → `bench.common.data` (A).** `_dataload.py` builds its task/skill/scenario views
+  and the `seed_transitions` update-chain on A's `load_repo`/`apply_overlay`.
+- **Verified behaviour-preserving:** 37 C tests pass; `static_decisions.csv` and
+  `runtime_checks.csv` are byte-for-byte identical to the pre-swap provisional run.
+- **Capability extraction stays in C** (`capabilities`, `repo_top_folders/files`) — A's
+  NOTES record that text-level extraction is C's job per the revised D12.
 
 ## Judgment calls (faithful to D12, but flagged)
 

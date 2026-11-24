@@ -1,11 +1,10 @@
 """Shared helpers for the policies: loading manifests, hashing files, glob
 matching, and pulling capabilities out of a version.
 
-Note (see NOTES.md): C1 says to reuse `bench/common/match.py` for the glob and
-command matching, but that's A's module and it doesn't exist yet. So the matching
-and the capability extractor live here for now, ported from each repo's
-check_repo.py. When A's match.py lands, swap the glob helpers below for it. The
-functions to swap are capabilities(), glob_within() and file_hashes().
+Glob matching is A's shared `bench.common.match` (C1 says to reuse it); `path_matches`
+and `glob_within` below are thin C-side wrappers over it for capability subsumption.
+The capability *extractor* (`capabilities`, `repo_top_folders/files`) stays here — A's
+NOTES record that text-level capability extraction is C's job per the revised D12.
 """
 
 from __future__ import annotations
@@ -15,6 +14,8 @@ import json
 import re
 import sys
 from pathlib import Path
+
+from bench.common import match
 
 # ---------------------------------------------------------------------------
 # Manifest
@@ -52,41 +53,17 @@ def file_hashes(version_root: Path) -> dict[str, str]:
 
 
 # ---------------------------------------------------------------------------
-# Glob subsumption (D2-style; provisional until common/match.py)
+# Glob subsumption (D2) — matching is A's bench.common.match; subsumption is C's
 # ---------------------------------------------------------------------------
 
 
-def glob_regex(pattern: str) -> re.Pattern:
-    """Compile a workspace glob (D2).
-
-    ``*`` matches any run of non-slash characters. ``**`` matches zero or more
-    whole path segments. ``dir/**`` matches ``dir`` itself as well as everything
-    under it, so a ``list_dir("dir")`` is covered by a ``dir/**`` grant.
-    """
-    out, i, n = "", 0, len(pattern)
-    while i < n:
-        # "/**" at end of the pattern, or just before a "/": the directory itself
-        # plus any subtree. "dir/**" -> dir(/...)? ; "a/**/b" -> a(/...)?/b
-        if pattern[i:i + 3] == "/**" and (i + 3 == n or pattern[i + 3] == "/"):
-            out += "(?:/.*)?"
-            i += 3
-        elif pattern[i:i + 3] == "**/":
-            out += "(?:.*/)?"
-            i += 3
-        elif pattern[i:i + 2] == "**":
-            out += ".*"
-            i += 2
-        elif pattern[i] == "*":
-            out += "[^/]*"
-            i += 1
-        else:
-            out += re.escape(pattern[i])
-            i += 1
-    return re.compile(out + r"\Z")
-
-
 def path_matches(path: str, patterns) -> bool:
-    return any(glob_regex(p).match(path) for p in patterns)
+    """True if ``path`` matches any glob in ``patterns`` under D2 (A's matcher).
+
+    ``*`` matches a run of non-slash characters, ``**`` zero or more whole segments,
+    and ``dir/**`` covers ``dir`` itself, so a ``list_dir("dir")`` is in a ``dir/**`` grant.
+    """
+    return any(match.path_matches(pat, path) for pat in patterns)
 
 
 def glob_within(inner: str, outer) -> bool:
