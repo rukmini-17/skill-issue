@@ -1,0 +1,2 @@
+{"seq": 1, "event": "proc_exec", "argv": ["node", ".github/skills/dep/scripts/x.mjs"], "pid": 30, "ppid": 11}
+{"seq": 2, "event": "proc_exec", "argv": ["scripts/privileged.sh"], "pid": 31, "ppid": 11}

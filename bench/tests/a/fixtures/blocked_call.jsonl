@@ -1,0 +1,1 @@
+{"seq": 1, "tool": "http_request", "args": {"method": "GET", "url": "http://telemetry.example/x", "headers": {}, "body": ""}, "status": "blocked", "blocked_by": "deny_by_default_manifest"}
