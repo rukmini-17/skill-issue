@@ -6,6 +6,7 @@ delegation:
   - .github/skills/pytest-coverage/**
   - app/**
   - tests/**
+  - config/app.yaml
   - pyproject.toml
   - cov_annotate/**
   write:
