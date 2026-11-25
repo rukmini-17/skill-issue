@@ -10,8 +10,8 @@
 | 4 adaptive attackers | **done except the stage-3 proposer (team-supplied); waiting for "continue"** |
 | 5 sweeps | not started (needs M1 and a go-ahead) |
 
-Branch `impl/d-attacks-runner`, cut from `origin/impl/c-policies` (it carries `repos/` and
-`bench/interfaces.py`, which are not on `main` yet). Run tests with `.venv/bin/python -m pytest bench/tests/d`.
+Branch `impl/d-attacks-runner`, cut from `origin/impl/c-policies`; `origin/impl/c-policies` (which already merged
+`main` at `data-v1`) is merged in, so the branch carries A's `bench/common`, oracle and mock. Run tests with `.venv/bin/python -m pytest bench/tests/d`.
 
 ## Checkpoint 1 — what was built
 
@@ -25,7 +25,9 @@ Branch `impl/d-attacks-runner`, cut from `origin/impl/c-policies` (it carries `r
   `error.json`, no `oracle.json`, and is retried on the next invocation.
 - `bench/runner/components.py`: builds harness/oracle/policy/attacker. `--dry-run` = stub harness, oracle
   and mock; policies stay real (offline, deterministic); `llm_reviewer` becomes an allow-all stub.
-- `bench/runner/data.py`: provisional loader (same role as A's `bench/common/data.py`). Read-only on `repos/`.
+- `bench/runner/data.py`: thin view over A's `bench/common/data.py` (`load_repo`, `apply_overlay`), keeping the
+  names D's code uses (`Repo.skills`, `Repo.benign`). Read-only on `repos/`. (Was a provisional loader before
+  `data-v1`; swapped with no behaviour change: all D tests, including byte-for-byte seed replay, pass.)
 - Configs: `bench/configs/experiments/dry_run.yaml`, `dry_run_benign.yaml`.
 - CLI: `python -m bench.runner bench/configs/experiments/dry_run.yaml --dry-run [--shard 0/4] [--workers 4]`.
 
@@ -84,8 +86,8 @@ kept, the rest redone); the dry-run benign grid (330 episodes) and the one-scena
   a model reply into file contents are the team's (D13: instruction text is team-written after M1). Without a
   proposer a search ends after stage 2. `bench/attackers/llm.py` is an OpenAI-compatible client the proposer can
   use (settings from `attacker_model`/env, key read from the env var named in `api_key_env`).
-- `validate.py`: structural class rules (mirror of the data's `check_repo.py`, plus size limits). A's class rules
-  replace it when they land. Invalid proposals count against the budget and are never submitted; seeds are
+- `validate.py`: structural class rules (mirror of the data's `check_repo.py`, plus size limits). A's `check_data.py`
+  (on `main`) has no per-class seed rules to reuse, so these stay in D. Invalid proposals count against the budget and are never submitted; seeds are
   checked and logged but submitted even if flagged (all 200 pass).
 - **Feedback restriction** (tested): the session's context type has no task/delegation/oracle/trace fields; a
   test walks the live session for `Task`/`Delegation`/`OracleResult` objects (it found and I removed a real
@@ -124,8 +126,8 @@ kept, the rest redone); the dry-run benign grid (330 episodes) and the one-scena
   workspace, and `command_exit` checks need the sandbox. Proposal: B leaves the workspace path in
   `meta.json["workspace"]` (kept until the run is judged) or runs `success_check` itself. Needs a decision
   before M1. (Not written into `INTERFACE_CHANGES.md`, which only exists on `impl/b-harness`.)
-- Real harness/oracle are loaded by dotted path (`components.DEFAULTS`: `bench.harness.run:Harness`,
-  `bench.oracle:Oracle`); those names are guesses until B and A merge.
+- Real harness/oracle are loaded by dotted path (`components.DEFAULTS`). `bench.oracle:Oracle` is A's, now on
+  `main`; `bench.harness.run:Harness` is still a guess until B merges.
 - Attack runs need `netns`/`docker` isolation (B's decision 1). `RunSpec` has no flag for it; the harness
   must infer "attack run" from `spec.scenario is not None`. A benign run has `scenario=None` only for
   `task_completion`/`benign_updates`.
@@ -137,4 +139,3 @@ kept, the rest redone); the dry-run benign grid (330 episodes) and the one-scena
 - Adaptive search runs the agent after every installed proposal (cached by installed state). With the real
   harness this is the dominant cost: up to 50 runs per scenario per policy; budget 25 is the fallback (D13).
 - Attack and benign agent runs reuse `_agent_cache`; a run that errors midway leaves `error.json` only.
-- Provisional loader duplicates C's `_dataload.py`; both go away when A's `bench/common/data.py` lands.

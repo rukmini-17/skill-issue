@@ -1,53 +1,26 @@
-"""Data access for the runner.
+"""Data access for the runner and attackers.
 
-A owns ``bench/common/data.py`` (``load_repo``, ``apply_overlay``). Until it lands this
-module reads the repo layout directly, with similar names, so the swap is one import.
+Thin view over A's ``bench/common/data.py`` (``load_repo``, ``apply_overlay``), keeping the
+names D's code already uses (``Repo.skills``, ``Repo.benign``, ``v1``, ``install_set``).
 
 Everything here is read-only on ``repos/``; overlays are applied into a scratch directory.
 """
 
 from __future__ import annotations
 
-import json
-import shutil
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 
-import yaml
+from bench.common import data as common
+from bench.interfaces import Scenario, SkillVersion, Task
 
-from bench.interfaces import Delegation, Scenario, SkillVersion, Task
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
-REPOS = REPO_ROOT / "repos"
-
-
-def _yaml(path: Path):
-    return yaml.safe_load(path.read_text(encoding="utf-8"))
+REPO_ROOT = common.REPO_ROOT
+REPOS = common.REPOS_DIR
 
 
 def repo_ids() -> list[str]:
-    return sorted(p.name for p in REPOS.iterdir() if (p / "scenarios").is_dir())
-
-
-def _task(repo_id: str, path: Path) -> Task:
-    d = _yaml(path)
-    dl = d.get("delegation") or {}
-    delegation = Delegation(
-        read=tuple(dl.get("read") or ()), write=tuple(dl.get("write") or ()),
-        exec=tuple(dl.get("exec") or ()), network=tuple(dl.get("network") or ()),
-        protected_data=tuple(dl.get("protected_data") or ()),
-    )
-    return Task(repo_id=repo_id, task_id=d["task_id"], skill_id=d["skill_id"], prompt=d.get("prompt", ""),
-                delegation=delegation, success_check=d.get("success_check") or {},
-                reference_dir=path.with_suffix(".reference"))
-
-
-def _scenario(repo_id: str, path: Path) -> Scenario:
-    d = _yaml(path)
-    return Scenario(repo_id=repo_id, scenario_id=d["scenario_id"], skill_id=d["skill_id"], task_id=d["task_id"],
-                    companion_skill_id=d.get("companion_skill_id"),
-                    benign_prefix=tuple(d.get("benign_prefix") or ()),
-                    attack=d.get("attack") or {}, seed_ids=tuple(d.get("seeds") or ()))
+    return common.available_repos()
 
 
 @dataclass
@@ -70,45 +43,21 @@ class Repo:
         return out
 
 
-_CACHE: dict[str, Repo] = {}
+def _benign_order(meta: dict, versions: dict[str, SkillVersion]) -> list[str]:
+    names = [e["version"] for e in (meta.get("benign_updates") or []) if "version" in e]
+    return names or sorted(n for n in versions if n.startswith("benign_"))
 
 
+@lru_cache(maxsize=None)
 def load_repo(repo_id: str) -> Repo:
-    if repo_id in _CACHE:
-        return _CACHE[repo_id]
-    root = REPOS / repo_id
-    if not root.is_dir():
-        raise FileNotFoundError(f"unknown repo {repo_id!r} (looked in {REPOS})")
-    tasks = {p.stem: _task(repo_id, p) for p in sorted((root / "tasks").glob("*.yaml"))}
-    scenarios = {p.parent.name: _scenario(repo_id, p) for p in sorted((root / "scenarios").glob("*/scenario.yaml"))}
-    skills: dict[str, dict[str, SkillVersion]] = {}
-    benign: dict[str, list[str]] = {}
-    for sdir in sorted(p for p in (root / "skills").iterdir() if p.is_dir()):
-        vroot = sdir / "versions"
-        skills[sdir.name] = {v.name: SkillVersion(repo_id, sdir.name, v.name, v)
-                             for v in sorted(vroot.iterdir()) if v.is_dir()}
-        meta = _yaml(sdir / "skill_meta.yaml") if (sdir / "skill_meta.yaml").exists() else {}
-        names = [e["version"] for e in (meta.get("benign_updates") or []) if "version" in e]
-        benign[sdir.name] = names or sorted(n for n in skills[sdir.name] if n.startswith("benign_"))
-    canary_path = root / "canaries.json"
-    canaries = json.loads(canary_path.read_text(encoding="utf-8")) if canary_path.exists() else []
-    repo = Repo(repo_id, root, tasks, scenarios, skills, benign, canaries)
-    _CACHE[repo_id] = repo
-    return repo
+    rd = common.load_repo(repo_id)
+    benign = {sid: _benign_order(rd.skill_meta.get(sid) or {}, vs) for sid, vs in rd.skill_versions.items()}
+    return Repo(rd.repo_id, rd.root, rd.tasks, rd.scenarios, rd.skill_versions, benign, rd.canaries)
 
 
 def apply_overlay(base: SkillVersion, overlay_dir: Path | None, out: Path, name: str | None = None) -> SkillVersion:
     """Copy ``base`` to ``out`` and lay the overlay's files on top (replace or add)."""
-    if out.exists():
-        shutil.rmtree(out)
-    shutil.copytree(base.root, out)
-    if overlay_dir is not None and overlay_dir.is_dir():
-        for f in sorted(overlay_dir.rglob("*")):
-            if f.is_file():
-                dst = out / f.relative_to(overlay_dir)
-                dst.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(f, dst)
-    return SkillVersion(base.repo_id, base.skill_id, name or out.name, out)
+    return common.apply_overlay(base, overlay_dir, out, version=name or Path(out).name)
 
 
 def seed_dir(repo: Repo, scenario: Scenario, seed_id: str) -> Path:

@@ -23,7 +23,7 @@ RUNTIME_POLICIES = frozenset({"deny_by_default_manifest", "delegation_envelope"}
 
 DEFAULTS = {
     "harness": "bench.harness.run:Harness",         # B (not yet merged)
-    "oracle": "bench.oracle:Oracle",                # A (not yet merged)
+    "oracle": "bench.oracle:Oracle",                # A (on main, data-v1)
     "attacker:static": "bench.attackers.static:StaticAttacker",             # D2
     "attacker:black_box_adaptive": "bench.attackers.adaptive:BlackBoxAttacker",   # D4
     "attacker:policy_aware_adaptive": "bench.attackers.adaptive:PolicyAwareAttacker",  # D4
