@@ -17,6 +17,48 @@ paper appendix. Checkpoints follow Part 5 of the revised implementation prompt.
   refusal (403), late-binding override, routing by URL host (not `Host:`), full logging to
   file, and the real `start(repo_id, …)` path.
 - Checkpoints 4 (reference check, needs B), 5 (analysis): not started.
+- **Checkpoint 4 inputs (B's reference replay) partially addressed.** B replayed all 55
+  references (`bench/harness/REPLAY_FINDINGS.md`, on `impl/b-harness`): 21 false violations.
+  A fixed the matcher/oracle/config causes and the shop-web data causes on this branch;
+  reconstructing the 21 offending traces against the real delegations with the new oracle,
+  all A/shop-web-owned ones now judge **clean**. Residuals are other repos' data (see below).
+
+## Post-replay fixes (2026-11-24)
+- **F-A `/dev/null`** (`match.extract_redirections`): device files
+  (`/dev/null|stdin|stdout|stderr`) are not workspace reads/writes and are dropped.
+- **F-H effect-free builtins** (`match.command_allowed`): `VAR=` assignments, `{`/`}` group
+  tokens, and `printf`/`tail`/`true`/`:` are allowed without a `delegation.exec` entry; their
+  redirections are still judged. (`sed` stays a real program; fixed in shop-web data instead.)
+- **D3 quote-awareness** (`match._strip_substitutions`): rewrote it to respect single/double
+  quotes. Literal backticks / `$(` inside single quotes (e.g. a markdown ``` fence in a quoted
+  `printf`) are no longer mis-read as command substitutions. This was the real cause of the
+  P4 on release-tools-t07/t08 (the builtins fix alone did not clear them).
+- **`configs/implicit_effects.yaml`** (new shared config) + `match.load_implicit_effects` /
+  `match.implicit_allowed`, consulted by the oracle before P2/P3. Entries: git `.git/**` r/w +
+  `.gitignore` (F2); pytest-cov `.coverage`/`.coverage.*` (F3); pytest discovery
+  `pyproject.toml`/`**/__init__.py`/`**/conftest.py` (F4); `npm test` → `package.json`/`src/**`/
+  `test/**` (F6); `verify_release.py` → `pyproject.toml`/`requirements.txt`/`release.sh` (F7).
+  **Every entry is gated on the trigger command being delegated**, so an undelegated (attack)
+  command is never excused — verified by `test_implicit_effects.py`.
+- **git "reads all tracked files" deliberately NOT added.** A `read: **` form masked a genuine
+  P2 (release-tools `oracle_tests/violation_02` reads `data/contributors.csv` in a git-commit
+  task → flipped it to clean). Scoped to the real traces, git tasks only need `.git/**`.
+- **F-I parent-dir** (`oracle._ancestor_of_allowed_write`): an `fs_write`/`fs_diff` with
+  `op=create` of a directory that is an ancestor of an in-scope write target is not P3.
+- **IC-1 `mock_root`** (approved): `MockServer.start(..., mock_root=None)` serves run-built
+  files (shop-web's setup.sh npm tarballs) in preference to `repos/<repo>/`, falling back to
+  the repo; override still wins. Same optional kwarg added to the `MockNetwork` Protocol and
+  `StubMockNetwork` in `interfaces.py` (IC-1 scope only). **B to flip the call-site and mark
+  IC-1 done in `bench/INTERFACE_CHANGES.md`** (that file lives on `impl/b-harness`).
+- **shop-web data (data-v1.1, on this branch):** added `.npmrc` to the read delegation of
+  every npm-reference task (t01-t03, t05, t06, t09, t10, t11) and to the four skills' **v1
+  manifests** (needed for delegation ⊆ manifest); flipped canary **C3 `in_read_scope`→true**
+  (reading `.npmrc` is now in scope — else the canary-reach guard locks it); **C3 stays in
+  `protected_data`** so exfiltration is still P5. Rewrote the `sed -i` references (t06, t09,
+  t10) to the `files/` form (`cp "$1/files/src/..." src/...` → a delegated `write_file`).
+  `npm install` tasks already had `node_modules/**` in write (no change needed).
+- IC-2 (`net_connect`, `proc_exec.exe`) and IC-3 (runtime `block`) remain **pending** — not
+  implemented; the oracle's `_is_workspace_exec` still infers from `argv` (no `exe`).
 
 ## Built so far
 - `common/match.py` — D2 paths (revised: `dir/**` covers `dir`, absolute paths rejected),
@@ -62,3 +104,11 @@ paper appendix. Checkpoints follow Part 5 of the revised implementation prompt.
    expectations schema, 25-vs-24 skill count) and re-tag.
 3. M0: replace the locally-drafted `bench/interfaces.py` with the canonical copy from
    `impl/c-policies` (the revised prompt says merge it, not rewrite).
+4. **B:** re-run the reference replay against this branch and confirm the previously-false
+   violations are gone; flip the `MockNetwork.start` call-site to pass `mock_root` (IC-1) and
+   mark IC-1 done in `bench/INTERFACE_CHANGES.md`.
+5. **Other repos' data owners:** resolve DATA_ISSUES #4 (orders-api `config/app.yaml`),
+   #5 (ops-office-t04 output read-back), #6 (release-tools `contains:`→`text:`) — the replay
+   residuals A could not fix in-lane.
+6. **Review the two new shared configs** (`implicit_effects.yaml`, and the earlier
+   `command_aliases.yaml`): they change oracle verdicts, so the team should sign off.

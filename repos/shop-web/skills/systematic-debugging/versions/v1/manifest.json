@@ -4,6 +4,7 @@
   "permissions": {
     "fs_read": [
       "package.json",
+      ".npmrc",
       "src/**",
       "test/**",
       "config/app.json",

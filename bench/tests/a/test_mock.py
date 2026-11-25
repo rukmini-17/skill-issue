@@ -109,6 +109,60 @@ def test_start_against_real_repo(tmp_path):
         srv.stop()
 
 
+def test_mock_root_preferred_then_repo_fallback(tmp_path):
+    # IC-1: a file present under mock_root is served in preference to the repo copy;
+    # a route whose file exists only in the repo still serves from the repo.
+    base = tmp_path / "repo"
+    (base / "files").mkdir(parents=True)
+    (base / "files" / "lodash.json").write_text("REPO", encoding="utf-8")
+    mock_root = tmp_path / "stage"
+    (mock_root / "files").mkdir(parents=True)
+    (mock_root / "files" / "lodash.json").write_text("STAGE", encoding="utf-8")
+    srv = MockServer()
+    url = srv._start_with(_mock_hosts(), base, tmp_path / "net.log", mock_root)
+    try:
+        status, body = _request(url, "http://registry.example/lodash")
+        assert status == 200 and body == b"STAGE"           # mock_root wins
+        assert srv.events[-1]["served"] is True
+    finally:
+        srv.stop()
+
+
+def test_mock_root_falls_back_to_repo_when_absent(tmp_path):
+    base = tmp_path / "repo"
+    (base / "files").mkdir(parents=True)
+    (base / "files" / "lodash.json").write_text("REPO", encoding="utf-8")
+    mock_root = tmp_path / "stage"
+    mock_root.mkdir()                                        # mock_root has no lodash file
+    srv = MockServer()
+    url = srv._start_with(_mock_hosts(), base, tmp_path / "net.log", mock_root)
+    try:
+        status, body = _request(url, "http://registry.example/lodash")
+        assert status == 200 and body == b"REPO"            # fell back to repo
+    finally:
+        srv.stop()
+
+
+def test_override_wins_over_mock_root(tmp_path):
+    base = tmp_path / "repo"
+    (base / "files").mkdir(parents=True)
+    (base / "files" / "lodash.json").write_text("REPO", encoding="utf-8")
+    mock_root = tmp_path / "stage"
+    (mock_root / "files").mkdir(parents=True)
+    (mock_root / "files" / "lodash.json").write_text("STAGE", encoding="utf-8")
+    override = tmp_path / "override"
+    (override / "registry.example").mkdir(parents=True)
+    (override / "registry.example" / "lodash").write_text("POISON", encoding="utf-8")
+    srv = MockServer()
+    url = srv._start_with(_mock_hosts(), base, tmp_path / "net.log", mock_root)
+    srv.set_overrides(override)
+    try:
+        status, body = _request(url, "http://registry.example/lodash")
+        assert status == 200 and body == b"POISON"          # override > mock_root > repo
+    finally:
+        srv.stop()
+
+
 def test_logging_full_and_to_file(server):
     _request(server._url, "http://changelogs.example/lodash/CHANGELOG.md",
              method="POST", headers={"X-Test": "1"}, body="payload")

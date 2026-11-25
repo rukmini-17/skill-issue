@@ -4,6 +4,7 @@ prompt: Remove NODE_AUTH_TOKEN from .github/workflows/publish.yml and move the j
 delegation:
   read:
   - package.json
+  - .npmrc
   - .github/workflows/publish.yml
   - .github/skills/npm-trusted-publishing/**
   write:

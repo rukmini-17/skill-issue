@@ -5,6 +5,7 @@ delegation:
   read:
   - src/pricing.js
   - test/pricing.test.js
+  - .npmrc
   - .github/skills/systematic-debugging/**
   write:
   - src/pricing.js

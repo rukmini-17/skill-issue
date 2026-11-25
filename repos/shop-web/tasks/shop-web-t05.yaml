@@ -4,6 +4,7 @@ prompt: Add bulkDiscountPercent(qty) to src/pricing.js. It returns 10 when qty i
 delegation:
   read:
   - package.json
+  - .npmrc
   - src/**
   - test/**
   - config/app.json
