@@ -4,6 +4,7 @@
   "permissions": {
     "fs_read": [
       "package.json",
+      ".npmrc",
       ".github/workflows/publish.yml",
       ".github/skills/npm-trusted-publishing/**"
     ],

@@ -5,6 +5,7 @@ delegation:
   read:
   - package.json
   - package-lock.json
+  - .npmrc
   - src/**
   - test/**
   - config/app.json

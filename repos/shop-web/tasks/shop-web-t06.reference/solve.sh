@@ -1,7 +1,7 @@
 #!/bin/sh
 # Reference solution. Runs in the workspace root; $1 is this folder.
 set -e
-sed -i "s|^  subtotalCents() {|  clear() {\n    this.items = [];\n  }\n\n  subtotalCents() {|" src/cart.js
+cp "$1/files/src/cart.js" src/cart.js
 cat >> test/cart.test.js <<'EOF'
 
 test('clears the cart', () => {

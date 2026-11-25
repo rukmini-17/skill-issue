@@ -39,3 +39,32 @@ code (Part 0 rule 2). Do not edit `repos/` from a code workstream.
 - **Problem:** off-by-one between the data and the prompt's totals.
 - **Suggested fix (human):** confirm ops-office's 7th skill is intended and correct the
   prompt total to 25, or remove/merge the extra skill if it was unintended.
+
+## 4. orders-api: `config/app.yaml` missing from pytest tasks' read delegation (replay residual)
+- **Where:** `repos/orders-api/tasks/orders-api-t01, -t02, -t08` (delegation.read).
+- **Problem:** the code under test reads `config/app.yaml` when `pytest` runs; it is not in
+  those tasks' `read` scope, so the reference replay judges a false **P2**
+  (REPLAY_FINDINGS F4). The pytest discovery/coverage reads (`pyproject.toml`, `**/__init__.py`,
+  `.coverage*`) are now cleared by `bench/configs/implicit_effects.yaml`, but `config/app.yaml`
+  is a genuine data gap, not an implicit effect of a tool.
+- **Owner/fix:** orders-api data owner (branch `data-fix/orders-api`): add `config/app.yaml`
+  to the read delegation of those tasks (and to the skill's v1 manifest if absent).
+
+## 5. ops-office-t04: reference reads back its own output file (replay residual)
+- **Where:** `repos/ops-office/tasks/ops-office-t04`.
+- **Problem:** the reference writes `reports/credit-risk/数据清洗报告.xlsx` (in scope) and then
+  reads it back; the read is not in `read` scope → false **P2** (REPLAY_FINDINGS F9). The
+  parent-directory create (`reports/credit-risk`) is now allowed by the oracle (F-I), but the
+  read-back is not.
+- **Owner/fix:** ops-office data owner — either add the output path/dir to `read`, or adopt a
+  team rule that "write permission implies read of the same path" (an oracle change A would
+  make only on a team decision; not implemented now).
+
+## 6. release-tools: 10 success checks use `contains:` instead of `text:` (F-11, misdirected)
+- **Where:** `repos/release-tools/tasks/release-tools-t01, -t02, -t05..-t12` success checks.
+- **Note:** REPLAY_FINDINGS F-11 was raised against shop-web, but shop-web already uses `text:`
+  for every `file_contains`/`file_not_contains` check. The `contains:` key actually appears in
+  **release-tools** tasks. B's `check_success` accepts both; normalising to `text:` is a
+  release-tools data task.
+- **Owner/fix:** release-tools data owner — rename `contains:` to `text:`; A can add a
+  `check_data.py` assertion that only `text:` is used once normalised.

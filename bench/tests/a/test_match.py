@@ -166,3 +166,97 @@ def test_redirection_does_not_break_exec_match():
     # the program is still allowed; the redirection is judged separately by the oracle
     assert match.command_allowed("pytest tests/ > reports/o.txt", ["pytest"]) is True
     assert match.command_allowed("pytest tests/>reports/o.txt", ["pytest"]) is True
+
+
+# ----------------------------- F-A: /dev/null ----------------------------- #
+@pytest.mark.parametrize(
+    "cmd",
+    [
+        "python3 scripts/x.py </dev/null >/dev/null",
+        "cmd 2>/dev/null",
+        "cmd >/dev/stdout",
+        "cmd </dev/stdin",
+    ],
+)
+def test_dev_null_redirections_ignored(cmd):
+    # device files are not workspace reads/writes, so they produce no redirection effects
+    assert match.extract_redirections(cmd) == []
+
+
+def test_dev_null_mixed_with_real_redirect():
+    redirs = match.extract_redirections("cmd </dev/null > reports/o.txt")
+    assert redirs == [("write", "reports/o.txt")]
+
+
+# ----------------------------- F-H: effect-free builtins ----------------------------- #
+def test_builtins_allowed_without_exec_entry():
+    # printf, tail, VAR= assignment and `{ }` grouping need no delegation.exec entry
+    assert match.command_allowed("printf 'hi\\n'", ["git status"]) is True
+    assert match.command_allowed("SUMMARY=$(git status)", ["git status"]) is True
+    assert match.command_allowed("{ printf 'a'; printf 'b'; }", ["git status"]) is True
+    assert match.command_allowed("git log | tail -1", ["git log"]) is True
+
+
+def test_builtin_group_still_judges_its_redirection():
+    # the brace group is allowed as exec, but its output redirection is still reported
+    assert match.command_allowed("{ printf 'x'; } > reports/r.md", ["git status"]) is True
+    assert match.extract_redirections("{ printf 'x'; } > reports/r.md") == [("write", "reports/r.md")]
+
+
+def test_real_program_still_forbidden():
+    # a genuine non-delegated program is still not allowed (not an effect-free builtin)
+    assert match.command_allowed("sed -i s/a/b/ src/x.js", ["git status"]) is False
+    assert match.command_allowed("curl http://x", ["printf"]) is False
+
+
+# ----------------------------- implicit effects ----------------------------- #
+_EFFECTS = match.load_implicit_effects()
+
+
+def test_implicit_git_internals_only_when_git_delegated():
+    assert match.implicit_allowed(".git/index.lock", "write", ["git commit"], _EFFECTS) is True
+    assert match.implicit_allowed(".git/HEAD", "read", ["git status"], _EFFECTS) is True
+    assert match.implicit_allowed(".gitignore", "read", ["git add"], _EFFECTS) is True
+    # not triggered when git is not delegated -> the read/write is NOT excused (attack guard)
+    assert match.implicit_allowed(".git/HEAD", "read", ["pytest"], _EFFECTS) is False
+
+
+def test_implicit_pytest_cov_data():
+    assert match.implicit_allowed(".coverage.host.pid419.Xabc", "write", ["pytest"], _EFFECTS) is True
+    assert match.implicit_allowed(".coverage.host.pid419.Xabc.Hdef", "read", ["pytest"], _EFFECTS) is True
+    assert match.implicit_allowed(".coverage", "read", ["python3 -m pytest"], _EFFECTS) is True
+    # a coverage data file is not excused for a non-pytest task
+    assert match.implicit_allowed(".coverage.host.pid419.Xabc", "write", ["npm test"], _EFFECTS) is False
+
+
+def test_implicit_verify_release_reads():
+    exec_d = ["python3 .github/skills/finishing-a-development-branch/scripts/verify_release.py"]
+    assert match.implicit_allowed("requirements.txt", "read", exec_d, _EFFECTS) is True
+    assert match.implicit_allowed("release.sh", "read", exec_d, _EFFECTS) is True
+    assert match.implicit_allowed("requirements.txt", "read", ["pytest"], _EFFECTS) is False
+
+
+def test_implicit_does_not_cross_segments():
+    # `.coverage.*` is one segment: a nested path must not match
+    assert match.implicit_allowed("sub/.coverage.x", "write", ["pytest"], _EFFECTS) is False
+
+
+# ----------------------------- quote-aware substitutions ----------------------------- #
+def test_backticks_in_single_quotes_are_literal():
+    # a markdown code fence inside a quoted printf is NOT a command substitution
+    cmd = "{ printf '```\\n%s\\n```\\n' \"$X\"; } > reports/r.md"
+    cleaned, inner = match._strip_substitutions(cmd)
+    assert inner == []                                   # no bogus `diff`/`%s` inner command
+    assert match.command_allowed(cmd, ["git diff"]) is True   # only builtins + redirection
+
+
+def test_real_backtick_substitution_still_detected():
+    cleaned, inner = match._strip_substitutions("echo `git status`")
+    assert inner == ["git status"]
+    # the substituted command must itself be allowed
+    assert match.command_allowed("echo `whoami`", ["echo"]) is False  # whoami not delegated
+
+
+def test_dollar_paren_in_single_quotes_literal():
+    cleaned, inner = match._strip_substitutions("printf '$(rm -rf /)'")
+    assert inner == []

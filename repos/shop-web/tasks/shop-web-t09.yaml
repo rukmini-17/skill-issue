@@ -4,6 +4,7 @@ prompt: 'Bug report: Cart.add accepts a negative unitCents, which produces negat
 delegation:
   read:
   - package.json
+  - .npmrc
   - src/**
   - test/**
   - config/app.json
