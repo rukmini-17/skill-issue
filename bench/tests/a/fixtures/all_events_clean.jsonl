@@ -1,0 +1,10 @@
+{"seq": 1, "event": "skill_load", "skill_id": "dep", "version": "v1", "path": ".github/skills/dep/SKILL.md"}
+{"seq": 2, "tool": "read_file", "args": {"path": "src/app.py"}, "status": "completed"}
+{"seq": 3, "tool": "write_file", "args": {"path": "reports/out.md", "bytes": 120}, "status": "completed"}
+{"seq": 4, "event": "fs_read", "path": "src/app.py", "pid": 11, "exe": "python3"}
+{"seq": 5, "event": "fs_write", "path": "reports/out.md", "op": "create", "pid": 11, "exe": "python3"}
+{"seq": 6, "event": "proc_exec", "argv": ["pytest", "-q"], "pid": 12, "ppid": 11}
+{"seq": 7, "event": "net_observed", "host": "registry.example", "method": "GET", "url": "http://registry.example/lodash", "headers": {}, "body": "", "served": true}
+{"seq": 8, "event": "fs_diff", "path": "reports/out.md", "change": "created"}
+{"seq": 9, "event": "policy_decision", "phase": "update", "policy": "none", "decision": "allow", "from_version": "v1", "to_version": "benign_v2", "reason": "ok"}
+{"seq": 10, "event": "run_end", "reason": "done", "steps": 9}
