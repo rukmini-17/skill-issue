@@ -11,6 +11,7 @@ modules other workstreams own and will fail with a clear message until those lan
 from __future__ import annotations
 
 import importlib
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -40,10 +41,26 @@ def resolve(dotted: str) -> Any:
 
 
 class SuccessChecker:
-    """Evaluates a task's success_check on the final workspace. Stub: success unknown (None)."""
+    """Returns the task's success result for a run.
+
+    B's harness evaluates ``success_check`` inside the sandbox and writes ``success.json`` (and a
+    copy in ``meta.json["success"]``); the runner reads that and never recomputes it (team note,
+    2026-11-22). With no harness result (stub harness, or no agent run) success is unknown (None).
+    """
 
     def check(self, task, run_dir: Path) -> dict:
-        return {"success": None, "checked": False, "reason": "stub: no workspace available"}
+        path = run_dir / "success.json"
+        try:
+            if path.exists():
+                return json.loads(path.read_text(encoding="utf-8"))
+            meta_path = run_dir / "meta.json"
+            if meta_path.exists():
+                success = json.loads(meta_path.read_text(encoding="utf-8")).get("success")
+                if isinstance(success, dict):
+                    return success
+        except (OSError, ValueError) as e:
+            return {"success": None, "checked": False, "reason": f"unreadable harness result: {e}"}
+        return {"success": None, "checked": False, "reason": "no harness success result"}
 
 
 @dataclass

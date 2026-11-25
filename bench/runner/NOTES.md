@@ -122,10 +122,12 @@ kept, the rest redone); the dry-run benign grid (330 episodes) and the one-scena
 
 ## Open questions / needs from others
 
-- **Success checks** (`success.json`) are `{"success": null}` for now: they must run against the final
-  workspace, and `command_exit` checks need the sandbox. Proposal: B leaves the workspace path in
-  `meta.json["workspace"]` (kept until the run is judged) or runs `success_check` itself. Needs a decision
-  before M1. (Not written into `INTERFACE_CHANGES.md`, which only exists on `impl/b-harness`.)
+- **Success checks — resolved (B's team note, 2026-11-22):** B's harness runs `success_check` in the sandbox and
+  writes `success.json` (copy in `meta.json["success"]`). `components.SuccessChecker` now reads that result
+  (`success.json`, else `meta.json["success"]`) instead of overwriting it with `{"success": null}`; it is carried
+  along on agent-cache reuse and for adaptive evidence runs. With the stub harness, or when no agent ran (every
+  adaptive proposal denied), success stays `null`. Tests: `test_harness_success_result_kept_including_cache_reuse`,
+  `test_success_checker_falls_back_to_meta_then_unknown`.
 - Real harness/oracle are loaded by dotted path (`components.DEFAULTS`). `bench.oracle:Oracle` is A's, now on
   `main`; `bench.harness.run:Harness` is still a guess until B merges.
 - Attack runs need `netns`/`docker` isolation (B's decision 1). `RunSpec` has no flag for it; the harness

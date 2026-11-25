@@ -244,3 +244,44 @@ def test_oracle_exception_becomes_unjudgeable(tmp_path):
         components.build = orig
     d = next(d for d in (tmp_path / "t").iterdir() if not d.name.startswith("_"))
     assert json.loads((d / "oracle.json").read_text())["verdict"] == "unjudgeable"
+
+
+# ---- success result comes from the harness (B writes success.json; runner must not overwrite) ----
+
+class SuccessHarness(StubHarness):
+    """Writes success.json and meta.json["success"] like B's harness."""
+
+    def __init__(self):
+        self.calls = 0
+
+    def run(self, spec: RunSpec):
+        self.calls += 1
+        trace = super().run(spec)
+        result = {"success": True, "checked": True, "type": "file_contains"}
+        (spec.out_dir / "success.json").write_text(json.dumps(result))
+        meta_path = spec.out_dir / "meta.json"
+        meta = json.loads(meta_path.read_text()) if meta_path.exists() else {}
+        meta["success"] = result
+        meta_path.write_text(json.dumps(meta))
+        return trace
+
+
+def test_harness_success_result_kept_including_cache_reuse(tmp_path):
+    h = SuccessHarness()
+    orig = components.build
+    try:
+        components.build = lambda dry, ov=None: Components(h, StubOracle(), SuccessChecker(), True, {})
+        s = run_experiment(cfg(max_scenarios_per_repo=1, policies=["none", "pin_reapprove"]), tmp_path, dry_run=True)
+    finally:
+        components.build = orig
+    assert h.calls == 1 and s["reused"] == 1                # second policy reuses the cached agent run
+    for d in (d for d in (tmp_path / "t").iterdir() if not d.name.startswith("_")):
+        assert json.loads((d / "success.json").read_text())["success"] is True
+        assert json.loads((d / "meta.json").read_text())["success"]["success"] is True
+
+
+def test_success_checker_falls_back_to_meta_then_unknown(tmp_path):
+    (tmp_path / "meta.json").write_text(json.dumps({"success": {"success": False, "checked": True}}))
+    assert SuccessChecker().check(None, tmp_path)["success"] is False
+    (tmp_path / "meta.json").unlink()
+    assert SuccessChecker().check(None, tmp_path)["success"] is None
