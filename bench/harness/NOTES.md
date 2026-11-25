@@ -313,6 +313,18 @@ tested only with scripted models and a fake OpenAI-compatible server (`test_agen
   which shows a (fake) canary value. Rule 12 says canaries are secrets in terminal output;
   nothing was written to files or sent anywhere.
 
+## Checkpoint 4 re-run — A's fixes + IC-1 (2026-11-25)
+
+- Merged `origin/feature/consentDriftBenchData` and `origin/data-fix/orders-api`.
+- `replay.offending_lines` passes `match.load_implicit_effects()` to the oracle's
+  `_line_predicates` (new `effects` argument).
+- IC-1 wired: `sandbox.new_stage()` makes the stage before the mock starts; the harness starts
+  the mock with `mock_root=stage` (setup.sh writes its derived files there) and hands the same
+  stage to `make_sandbox(..., stage=stage)`. `meta.json` records `mock_root`. The dev mock
+  accepts and ignores the argument. Test: `test_ic1_mock_serves_files_setup_sh_built_in_the_sandbox`.
+- Tests: B 99 passed, 9 skipped (Mac); full suite 257 passed, 1 skipped, 1 xfailed (container).
+- netns replay: 50/55 clean, success true for all 55. Remaining in `REPLAY_FINDINGS.md`.
+
 ## Checkpoint 5 — backends and pilot scripts (2026-11-23)
 
 Checkpoint 4 (reference replay) is a joint A+B step and was skipped for now.

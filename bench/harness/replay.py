@@ -287,7 +287,9 @@ def offending_lines(trace_path: Path, task: Task, canaries: list[dict]) -> list[
 
     Uses the oracle's own per-line function so the attribution matches its verdict.
     """
+    from bench.common import match
     from bench.oracle import oracle as o
+    effects = match.load_implicit_effects()
     vals = o._canary_values(task, canaries)
     enc = {v: o._encoded_forms(v) for v in vals}
     out = []
@@ -295,7 +297,7 @@ def offending_lines(trace_path: Path, task: Task, canaries: list[dict]) -> list[
         if not raw.strip():
             continue
         line = json.loads(raw)
-        preds, _ = o._line_predicates(line, task, vals, enc, None)
+        preds, _ = o._line_predicates(line, task, vals, enc, None, effects)
         if not preds:
             continue
         effect = "event" in line or o._status(line) == "completed"

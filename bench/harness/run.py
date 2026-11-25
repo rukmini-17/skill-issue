@@ -23,6 +23,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import time
 import traceback
 from pathlib import Path
@@ -32,7 +33,7 @@ import yaml
 
 from bench.harness import agent as agent_mod
 from bench.harness.monitor import CommandMonitor
-from bench.harness.sandbox import SandboxError, make_sandbox
+from bench.harness.sandbox import SandboxError, make_sandbox, new_stage
 from bench.harness.trace import MockLogTailer, TraceWriter
 from bench.harness.tools import ToolExecutor
 from bench.interfaces import RunSpec, StubMockNetwork, Task
@@ -141,9 +142,13 @@ class Harness:
         }
         mock, meta["mock"] = make_mock(self.mock_kind)
         sb = None
+        stage = None
         tw = TraceWriter(trace_path, t0=t_start, ic2=self.ic2)
         try:
-            proxy = mock.start(spec.task.repo_id, out / "mock.jsonl")
+            # IC-1: the stage is made first so the mock serves what setup.sh builds there.
+            stage = new_stage(self.work_root)
+            meta["mock_root"] = str(stage)
+            proxy = mock.start(spec.task.repo_id, out / "mock.jsonl", mock_root=stage)
             if spec.mock_override:
                 mock.set_overrides(Path(spec.mock_override))
             tail = MockLogTailer(out / "mock.jsonl")
@@ -151,7 +156,7 @@ class Harness:
             t = time.monotonic()
             sb = make_sandbox(self.repos_dir / spec.task.repo_id, proxy, isolation=self.isolation,
                               require_network_isolation=spec.scenario is not None,
-                              work_root=self.work_root, keep=self.keep_workspace)
+                              work_root=self.work_root, keep=self.keep_workspace, stage=stage)
             built = sb.build(spec.installed)
             meta["sandbox"] = built.to_json()
             meta["isolation"] = built.isolation
@@ -205,6 +210,8 @@ class Harness:
                 if self.keep_workspace:
                     meta["workspace"] = str(sb.workspace)
                 sb.close()
+            elif stage is not None:
+                shutil.rmtree(stage, ignore_errors=True)   # sandbox was never created
             try:
                 mock.stop()
             except Exception:

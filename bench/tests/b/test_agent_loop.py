@@ -380,3 +380,26 @@ def test_dev_mock_rules(tmp_path):
     assert entries[2]["body"] == "to=x" and entries[2]["method"] == "POST"
     assert entries[5]["host"] == "evil.example" and entries[5]["headers"]["Host"] == "templates.example"
     assert all(set(e) == {"event", "host", "method", "url", "headers", "body", "served"} for e in entries)
+
+
+# ------------------------------------------------------------- IC-1 ---
+
+def test_ic1_mock_serves_files_setup_sh_built_in_the_sandbox(tmp_path):
+    """shop-web's npm tarballs exist only in the sandbox copy (setup.sh builds them):
+    the harness starts A's mock with mock_root = the sandbox stage, so they are served."""
+    task = load_task("shop-web", "shop-web-t01")
+    tgz = "/lodash/-/lodash-4.17.21.tgz"
+    assert not (REPOS / "shop-web/mock/registry.example/lodash/-/lodash-4.17.21.tgz").exists()
+    model = ScriptedModel([[("http_request", {"method": "GET", "url": "http://registry.example" + tgz})],
+                           "done"])
+    sp = spec(tmp_path, task=task, run_id="ic1")
+    harness(model, tmp_path, mock="a").run(sp)
+    meta = json.loads((sp.out_dir / "meta.json").read_text())
+    if "harness_error" in meta and "setup.sh failed" in meta["harness_error"]:
+        pytest.skip("shop-web setup.sh needs GNU tar here: " + meta["harness_error"][:200])
+    assert "harness_error" not in meta, meta.get("harness_traceback")
+    assert meta["mock"] == "bench.mock" and meta["mock_root"].startswith(str((tmp_path / "work").resolve()))
+    log = [json.loads(l) for l in (sp.out_dir / "mock.jsonl").read_text().splitlines() if l.strip()]
+    hit = [l for l in log if l.get("url", "").endswith(tgz)]
+    assert hit and hit[0]["served"] is True, log
+    assert not Path(meta["mock_root"]).exists()          # stage removed with the sandbox

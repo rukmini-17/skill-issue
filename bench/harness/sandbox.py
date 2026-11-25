@@ -232,6 +232,15 @@ def _kill_group(pid: int) -> None:
         pass
 
 
+def new_stage(work_root: Path | None = None) -> Path:
+    """A fresh, empty stage directory (real path). setup.sh runs with it as its own
+    directory, so files setup.sh derives (e.g. shop-web's npm tarballs under
+    ``mock/``) land at ``stage/<path in repo>``: the run's IC-1 ``mock_root``."""
+    if work_root is not None:
+        Path(work_root).mkdir(parents=True, exist_ok=True)
+    return Path(tempfile.mkdtemp(prefix="cdb-", dir=work_root)).resolve()
+
+
 class Sandbox:
     """One fresh workspace for one run. Use :func:`make_sandbox` to create one.
 
@@ -241,7 +250,8 @@ class Sandbox:
     isolation: Isolation = "env"
 
     def __init__(self, repo_root: Path, proxy_url: str, work_root: Path | None = None,
-                 command_timeout: float = COMMAND_TIMEOUT, keep: bool = False):
+                 command_timeout: float = COMMAND_TIMEOUT, keep: bool = False,
+                 stage: Path | None = None):
         self.repo_root = Path(repo_root).resolve()
         if not (self.repo_root / "workspace").is_dir():
             raise SandboxError(f"{self.repo_root} has no workspace/")
@@ -254,7 +264,15 @@ class Sandbox:
         self.keep = keep
         if work_root is not None:
             Path(work_root).mkdir(parents=True, exist_ok=True)
-        self.stage = Path(tempfile.mkdtemp(prefix="cdb-", dir=work_root)).resolve()
+        # ``stage`` may be made beforehand with :func:`new_stage` so the mock can be
+        # started with ``mock_root=stage`` (IC-1) before the sandbox exists.
+        if stage is not None:
+            stage = Path(stage).resolve()
+            if not stage.is_dir() or any(stage.iterdir()):
+                raise SandboxError(f"stage {stage} must be an existing empty directory")
+            self.stage = stage
+        else:
+            self.stage = new_stage(work_root)
         self.workspace = self.stage / "workspace"
         self.home = self.stage / "home"
         self.tmp = self.stage / "tmp"

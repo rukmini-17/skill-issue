@@ -80,7 +80,7 @@ class DevMockNetwork:
 
     # -- MockNetwork protocol ------------------------------------------------
 
-    def start(self, repo_id: str, log_path: Path) -> str:
+    def start(self, repo_id: str, log_path: Path, mock_root: Path | None = None) -> str:
         self.repo_dir = self.repos_dir / repo_id
         cfg = yaml.safe_load((self.repo_dir / "mock_hosts.yaml").read_text()) or {}
         self.hosts = {h["name"].lower(): (h.get("routes") or {}) for h in cfg.get("hosts") or []}
