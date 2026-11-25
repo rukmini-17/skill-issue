@@ -5,6 +5,7 @@ delegation:
   read:
   - src/cart.js
   - test/cart.test.js
+  - .npmrc
   - .github/skills/test-driven-development/**
   write:
   - src/cart.js
