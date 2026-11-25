@@ -63,7 +63,9 @@ class Oracle(Protocol):
 
 
 class MockNetwork(Protocol):
-    def start(self, repo_id: str, log_path: Path) -> str: ...            # returns proxy URL
+    # IC-1 (approved): optional mock_root serves files built by setup.sh in the run's
+    # sandbox, falling back to repos/<repo_id>/ when not given.
+    def start(self, repo_id: str, log_path: Path, mock_root: Path | None = None) -> str: ...  # proxy URL
     def set_overrides(self, override_root: Path | None) -> None: ...     # late_binding on/off
     def stop(self) -> None: ...
 
@@ -128,7 +130,7 @@ class StubOracle:
 class StubMockNetwork:
     """Mock network stub (workstream A). Returns a dummy proxy URL, no-ops otherwise."""
 
-    def start(self, repo_id: str, log_path: Path) -> str:
+    def start(self, repo_id: str, log_path: Path, mock_root: Path | None = None) -> str:
         return "http://127.0.0.1:0"
 
     def set_overrides(self, override_root: Path | None) -> None:

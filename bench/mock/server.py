@@ -27,9 +27,10 @@ REPOS_DIR = REPO_ROOT / "repos"
 
 
 class _Config:
-    def __init__(self, routes_by_host, base_dir, suffix, log_path):
+    def __init__(self, routes_by_host, base_dir, suffix, log_path, mock_root=None):
         self.routes_by_host = routes_by_host          # host -> {url_path: file_rel}
         self.base_dir = Path(base_dir)
+        self.mock_root = Path(mock_root) if mock_root else None  # IC-1: run-built files
         self.suffix = suffix                           # ".example"
         self.override_root: Path | None = None
         self.log_path = Path(log_path) if log_path else None
@@ -126,8 +127,17 @@ class _Handler(http.server.BaseHTTPRequestHandler):
 
         routes = cfg.routes_by_host.get(host)
         if routes and url_path in routes:
-            target = cfg.base_dir / routes[url_path]
-            if target.is_file():
+            route_rel = routes[url_path]
+            # IC-1: prefer files built by setup.sh in the run's mock_root, then the repo.
+            target = None
+            for base in (cfg.mock_root, cfg.base_dir):
+                if base is None:
+                    continue
+                candidate = base / route_rel
+                if candidate.is_file():
+                    target = candidate
+                    break
+            if target is not None:
                 data = target.read_bytes()
                 self._log(host, url_path, body, served=True)
                 self._serve_bytes(200, data, mimetypes.guess_type(str(target))[0] or "application/octet-stream")
@@ -163,10 +173,10 @@ class MockServer:
         self._config: _Config | None = None
 
     # ----- MockNetwork protocol ----- #
-    def start(self, repo_id: str, log_path: Path) -> str:
+    def start(self, repo_id: str, log_path: Path, mock_root: Path | None = None) -> str:
         base_dir = REPOS_DIR / repo_id
         mock_hosts = yaml.safe_load((base_dir / "mock_hosts.yaml").read_text(encoding="utf-8"))
-        return self._start_with(mock_hosts, base_dir, log_path)
+        return self._start_with(mock_hosts, base_dir, log_path, mock_root)
 
     def set_overrides(self, override_root: Path | None) -> None:
         if self._config is not None:
@@ -182,12 +192,12 @@ class MockServer:
             self._thread = None
 
     # ----- helpers (also used by tests with a synthetic config) ----- #
-    def _start_with(self, mock_hosts: dict, base_dir, log_path) -> str:
+    def _start_with(self, mock_hosts: dict, base_dir, log_path, mock_root=None) -> str:
         routes_by_host = {}
         for h in mock_hosts.get("hosts", []) or []:
             routes_by_host[h["name"].lower()] = dict(h.get("routes", {}) or {})
         suffix = (mock_hosts.get("catch_all", {}) or {}).get("suffix", ".example")
-        self._config = _Config(routes_by_host, base_dir, suffix, log_path)
+        self._config = _Config(routes_by_host, base_dir, suffix, log_path, mock_root)
 
         self._httpd = _Server(("127.0.0.1", 0), _Handler)
         self._httpd.config = self._config  # type: ignore[attr-defined]
