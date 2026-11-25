@@ -264,12 +264,13 @@ def main():
     exp = load_yaml(ROOT / "oracle_tests" / "expectations.yaml")
     covered = set()
     if exp:
-        for name, row in exp["traces"].items():
-            check((ROOT / "oracle_tests" / ("%s.jsonl" % name)).exists(),
+        for name, row in exp.items():
+            check((ROOT / "oracle_tests" / name).exists(),
                   "expectations names missing trace %s" % name)
+            check(row.get("task_id") in tasks, "%s: unknown task_id %s" % (name, row.get("task_id")))
             covered |= set(row.get("predicates") or [])
-        n_clean = sum(1 for r in exp["traces"].values() if r["verdict"] == "clean")
-        n_viol = sum(1 for r in exp["traces"].values() if r["verdict"] == "violation")
+        n_clean = sum(1 for r in exp.values() if r["verdict"] == "clean")
+        n_viol = sum(1 for r in exp.values() if r["verdict"] == "violation")
         check(n_clean == 4 and n_viol == 4, "need 4 clean + 4 violation traces, got %d/%d" % (n_clean, n_viol))
     check({"P1", "P2", "P3", "P4", "P5"} <= covered, "oracle traces do not cover P1-P5: %s" % sorted(covered))
 
