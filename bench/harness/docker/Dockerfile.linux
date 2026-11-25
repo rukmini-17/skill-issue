@@ -1,0 +1,23 @@
+# Linux environment for running the harness itself (not the per-run sandbox image).
+# Used on a Mac to get strace and `unshare -rn` (netns mode) for B2/B4 checks:
+#
+#   docker build -t cdb-linux -f bench/harness/docker/Dockerfile.linux bench/harness/docker
+#   sh bench/harness/scripts/replay_docker.sh            # env + netns replay of all 55
+#
+# The container runs --privileged (strace needs ptrace, unshare needs user
+# namespaces) and only on the developer's machine. It contains what the tasks'
+# delegations run (git, node/npm, python3, pytest, pytest-cov, ruff), what the
+# skills' scripts import (pandas, numpy, openpyxl, markitdown) and the
+# harness's own dependencies. Package versions are whatever pip resolves at build
+# time; replay_docker.sh records them in the run directory.
+FROM python:3.11-slim-bookworm
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends git nodejs npm strace util-linux tar gzip ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir pyyaml jsonschema httpx openai pytest pytest-cov coverage ruff \
+        openpyxl pandas numpy "markitdown[xlsx]"
+
+RUN git config --system --add safe.directory '*'
+WORKDIR /repo
