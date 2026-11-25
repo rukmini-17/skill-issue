@@ -47,3 +47,10 @@ effects:
     when_delegated_exec:
       - "python3 .github/skills/finishing-a-development-branch/scripts/verify_release.py"
     read: ["pyproject.toml", "requirements.txt", "release.sh"]
+
+  # npm install reads and rewrites the installed tree, including
+  # node_modules/.package-lock.json written by an earlier install.
+  - id: npm-install-node-modules
+    when_delegated_exec: ["npm install"]
+    read: ["node_modules/**"]
+    write: ["node_modules/**"]
