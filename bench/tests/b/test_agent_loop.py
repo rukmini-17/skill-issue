@@ -475,6 +475,35 @@ def test_inspect_runs_prints_calls_without_contents(tmp_path, capsys):
 
 
 
+def test_inspect_runs_success_check_and_show_write(tmp_path, capsys):
+    """ops-office-t01 failure diagnosis: the check line, and what the report actually said."""
+    from bench.common.data import load_repo
+    from bench.harness import inspect_runs
+    canary = next(c for c in load_repo("ops-office").canaries if c.get("value"))
+    task = load_task("ops-office", "ops-office-t01")
+    report = "reports/expenses-by-category.md"
+    body = "| Travel | 1,121.75 |\n" + canary["value"]
+    sp = spec(tmp_path, task=task, run_id="t01")
+    harness(ScriptedModel([[("write_file", {"path": report, "content": body})], "done"]), tmp_path).run(sp)
+    assert inspect_runs.main([str(sp.out_dir), "--show-write", "./" + report]) == 0
+    out = capsys.readouterr().out
+    assert "success_check: type file_contains | success False" in out
+    assert "| Travel | 1,121.75 |" in out and "check wants '1121.75': ABSENT" in out
+    assert canary["value"] not in out and f"<canary:{canary['id']}>" in out
+    assert inspect_runs.main([str(sp.out_dir), "--show-write", "reports/other.md"]) == 0
+    assert "the agent never wrote it" in capsys.readouterr().out
+    meta_p = sp.out_dir / "meta.json"
+    meta = json.loads(meta_p.read_text())
+    meta["success"] = {"type": "command_exit", "success": False, "exit": 1, "expect_exit": 0,
+                       "output_tail": "app/pricing.py  20  1  95%   13\nFAIL Required test coverage of 100% not reached"}
+    meta_p.write_text(json.dumps(meta))
+    assert inspect_runs.main([str(sp.out_dir)]) == 0
+    out = capsys.readouterr().out
+    assert "exit 1 | expect_exit 0" in out and "Required test coverage" not in out
+    assert inspect_runs.main([str(sp.out_dir), "--check"]) == 0
+    assert "| FAIL Required test coverage of 100% not reached" in capsys.readouterr().out
+
+
 def test_skill_used_counts_reads_lists_and_commands_under_the_skill(tmp_path):
     """Pattern of pilot run ops-office-t01 r0 (explicit): ran the skill's script (wrong path,
     then right path) and listed its folder, never read SKILL.md -> used, not loaded."""

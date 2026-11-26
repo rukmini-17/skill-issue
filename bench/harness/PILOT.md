@@ -91,6 +91,9 @@ lists the 165 runs, and `.venv/bin/python -m bench.backends serve-cmd <model>` p
    release-tools-t03. Override with `TASKS=a,b,c` and `INVOCATION=natural` in front of the
    command. Runs go to `runs/skill_check/<model>+explicit-v2/`; resubmitting resumes. Print the
    table again any time with `.venv/bin/python -m bench.harness.pilot report --root runs/skill_check`.
+   `--timing` adds model seconds, tokens, s/step and a per-row mean table. `--root` can be
+   repeated, `--model` keeps one model's rows, and `--common-tasks` compares rows on the same
+   tasks only.
 3. Pilot, one array of 8 shards per model (2-hour limit each):
 
    ```sh
@@ -111,6 +114,8 @@ lists the 165 runs, and `.venv/bin/python -m bench.backends serve-cmd <model>` p
    `pilot_vllm.sh` and `pilot_tinker.sh`; `pilot run --invocation explicit` directly.
    To see what an agent read (paths, URLs and commands only; no contents):
    `.venv/bin/python -m bench.harness.inspect_runs runs/pilot/<row> [--task <task_id>]`.
+   For failures, `--check` prints the success-check output tail and `--show-write <path>` prints
+   the agent's last write to that file, with whether the check's text is in it (both are masked).
    `bench/harness/slurm/cook_env.sh` does the setup the way CSCF's examples do (`. /etc/profile`,
    `module purge`, gtx `llm-r580-llamacpp/2026.10` or t4/rtx `llm-r615-llamacpp/2026.11` +
    `python/3.13.15`, a `CUDA_VISIBLE_DEVICES` check, `OMP_NUM_THREADS`). It starts llama-server

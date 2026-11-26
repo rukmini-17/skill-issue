@@ -239,6 +239,10 @@ def collect(root: Path) -> list[dict]:
             "truncated_turns": m.get("truncated_turns") or 0, "observer": m.get("observer"),
             "isolation": m.get("isolation"), "agent_s": (m.get("timings") or {}).get("agent_s"),
             "tokens": sum((m.get("usage") or {}).get(k, 0) for k in ("prompt_tokens", "completion_tokens")),
+            "model_s": (m.get("timings") or {}).get("model_s"),
+            "prompt_tokens": (m.get("usage") or {}).get("prompt_tokens"),
+            "completion_tokens": (m.get("usage") or {}).get("completion_tokens"),
+            "reasoning_chars": (m.get("behaviour") or {}).get("reasoning_chars"),
             # behaviour (None for runs recorded before meta.json had "behaviour")
             "multi_call_turns": (m.get("behaviour") or {}).get("multi_call_turns"),
             "blind_write_turns": (m.get("behaviour") or {}).get("blind_write_turns"),
@@ -340,19 +344,63 @@ def render(tables: dict[str, str]) -> str:
             f"{tables['per_task']}\n\n#### Errors\n\n{tables['errors']}\n")
 
 
+def _report_rows(a) -> list[dict]:
+    tasks = set(a.tasks.split(",")) if a.tasks else None
+    rows = [r for root in (a.root or [PILOT_ROOT]) for r in collect(root)]
+    rows = [r for r in rows if (not tasks or r["task_id"] in tasks)
+            and (not a.model or r["model"] == a.model or r["model"].startswith(a.model + "+"))]
+    if a.common_tasks:      # same (task, repeat) in every row, so row means compare like with like
+        done = [r for r in rows if r["complete"]]
+        keys = [{(r["task_id"], r["repeat"]) for r in done if r["model"] == m} for m in {r["model"] for r in done}]
+        common = set.intersection(*keys) if keys else set()
+        rows = [r for r in rows if (r["task_id"], r["repeat"]) in common]
+    return rows
+
+
+def _mean(xs) -> str:
+    xs = [x for x in xs if x is not None]
+    return f"{sum(xs) / len(xs):.0f}" if xs else "-"
+
+
+def _per(a, b):
+    return a / b if a is not None and b else None
+
+
 def cmd_report(a) -> int:
-    """One line per run (skill-load checks): task, row, skill_load, skill_used, success, run_end."""
-    rows = [r for r in collect(a.root) if not a.tasks or r["task_id"] in set(a.tasks.split(","))]
-    print("| row | task | skill | invocation | skill_load | skill_used | success | run_end | steps | agent s |")
-    print("|---|---|---|---|---|---|---|---|---|---|")
+    """One line per run (skill-load checks): task, row, skill_load, skill_used, success, run_end.
+    ``--timing`` adds where the time went (model seconds, tokens, reasoning) and a per-row mean."""
+    rows = _report_rows(a)
+    head = "| row | task | skill | invocation | skill_load | skill_used | success | run_end | steps | agent s |"
+    if a.timing:
+        head += " model s | prompt tok | compl tok | compl tok/step | s/step | reasoning chars |"
+    print(head)
+    print("|---" * (head.count("|") - 1) + "|")
     for r in sorted(rows, key=lambda r: (r["model"], r["task_id"], r["repeat"])):
-        print(f"| {r['model']} | {r['task_id']} r{r['repeat']} | {r['skill_id']} | {r['invocation']} | "
-              f"{r['skill_loaded']} | {r['skill_used']} | {r['success']} | {r['run_end']} | {r['steps']} | "
-              f"{r['agent_s'] if r['agent_s'] is None else round(r['agent_s'])} |")
+        line = (f"| {r['model']} | {r['task_id']} r{r['repeat']} | {r['skill_id']} | {r['invocation']} | "
+                f"{r['skill_loaded']} | {r['skill_used']} | {r['success']} | {r['run_end']} | {r['steps']} | "
+                f"{r['agent_s'] if r['agent_s'] is None else round(r['agent_s'])} |")
+        if a.timing:
+            line += (f" {_mean([r['model_s']])} | {r['prompt_tokens']} | {r['completion_tokens']} | "
+                     f"{_mean([_per(r['completion_tokens'], r['steps'])])} | "
+                     f"{_mean([_per(r['agent_s'], r['steps'])])} | {r['reasoning_chars']} |")
+        print(line)
     done = [r for r in rows if r["complete"]]
     print(f"\n{len(done)} completed runs: skill_load {sum(bool(r['skill_loaded']) for r in done)}, "
           f"skill_used {sum(bool(r['skill_used']) for r in done)}, "
           f"success {sum(r['success'] is True for r in done)}")
+    if a.timing:
+        print("\n| row | runs | mean steps | mean agent s | mean model s | mean compl tok | "
+              "mean compl tok/step | mean s/step | run_end |")
+        print("|---|---|---|---|---|---|---|---|---|")
+        for label in sorted({r["model"] for r in done}):
+            g = [r for r in done if r["model"] == label]
+            ends = Counter(r["run_end"] for r in g)
+            print(f"| {label} | {len(g)} | {sum(r['steps'] for r in g) / len(g):.1f} | "
+                  f"{_mean(r['agent_s'] for r in g)} | {_mean(r['model_s'] for r in g)} | "
+                  f"{_mean(r['completion_tokens'] for r in g)} | "
+                  f"{_mean(_per(r['completion_tokens'], r['steps']) for r in g)} | "
+                  f"{_mean(_per(r['agent_s'], r['steps']) for r in g)} | "
+                  f"{', '.join(f'{k} {v}' for k, v in sorted(ends.items(), key=str))} |")
     return 0
 
 
@@ -411,8 +459,14 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--csv", type=Path, default=None)
     s.add_argument("--update-md", type=Path, default=None)
     rp = sub.add_parser("report", help="one line per run: skill_load / skill_used / success")
-    rp.add_argument("--root", type=Path, default=PILOT_ROOT)
+    rp.add_argument("--root", type=Path, action="append",
+                    help=f"pilot root; repeat to compare roots (default {PILOT_ROOT})")
     rp.add_argument("--tasks", default="", help="comma-separated task ids (default: all)")
+    rp.add_argument("--model", default="", help="only this model's rows (natural and explicit)")
+    rp.add_argument("--timing", action="store_true",
+                    help="add model s, tokens, s/step, reasoning chars and a per-row mean table")
+    rp.add_argument("--common-tasks", action="store_true",
+                    help="keep only (task, repeat) pairs that every row completed (fair row means)")
     a = ap.parse_args(argv)
     if a.cmd == "report":
         return cmd_report(a)

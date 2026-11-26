@@ -14,6 +14,13 @@ contents and write contents are never printed. Canary values are masked (rule 12
 ``--output`` adds, for those steps, the last lines of a ``run_command`` result (exit
 code, stdout and stderr tails as the agent saw them). Only command results are shown,
 never ``read_file`` / ``http_request`` results.
+
+Every run also gets a ``success_check`` line (type, reason, exit code). Two opt-ins,
+both masked and both limited to ``--tail`` lines:
+
+    --check              the success-check command's output tail (command_exit tasks)
+    --show-write PATH    what the agent last wrote to PATH (e.g. the report a
+                         file_contains check reads), with the needle the check wanted
 """
 
 from __future__ import annotations
@@ -77,7 +84,44 @@ def _tail(result: str, n: int) -> list[str]:
     return out
 
 
-def inspect(run: Path, outputs: set[int] | None = None, tail: int = 15) -> list[str]:
+def _success_lines(meta: dict, check: bool, tail: int) -> list[str]:
+    sc = meta.get("success") or {}
+    parts = [f"type {sc.get('type')}", f"success {sc.get('success')}"]
+    parts += [f"{k} {sc[k]}" for k in ("reason", "exit", "expect_exit") if k in sc]
+    out = ["   success_check: " + " | ".join(parts)]
+    if check and sc.get("output_tail"):
+        lines = sc["output_tail"].rstrip("\n").splitlines()
+        out.append(f"   check output (last {min(tail, len(lines))} lines):")
+        out += ["      | " + l[:300] for l in lines[-tail:]]
+    return out
+
+
+def _write_lines(msgs: list[dict], path: str, needle, tail: int) -> list[str]:
+    want = path.lstrip("./")
+    last = None
+    for m in msgs:
+        for c in (m.get("tool_calls") or []) if m.get("role") == "assistant" else []:
+            f = c.get("function") or {}
+            if f.get("name") != "write_file":
+                continue
+            try:
+                a = json.loads(f.get("arguments") or "")
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if isinstance(a, dict) and str(a.get("path", "")).lstrip("./") == want:
+                last = str(a.get("content", ""))
+    if last is None:
+        return [f"   write {path}: the agent never wrote it"]
+    lines = last.splitlines()
+    out = [f"   last write to {path} ({len(lines)} lines, first {min(tail, len(lines))}):"]
+    out += ["      | " + l[:300] for l in lines[:tail]]
+    if needle is not None:
+        out.append(f"   check wants {needle!r}: {'present' if needle in last else 'ABSENT'} in that write")
+    return out
+
+
+def inspect(run: Path, outputs: set[int] | None = None, tail: int = 15,
+            check: bool = False, show_write: str = "") -> list[str]:
     meta = json.loads((run / "meta.json").read_text())
     msgs = json.loads((run / "messages.json").read_text())
     can = _canaries(meta.get("repo_id", ""))
@@ -106,7 +150,20 @@ def inspect(run: Path, outputs: set[int] | None = None, tail: int = 15) -> list[
                        f"{note}{status}")
             if outputs and step in outputs and f.get("name") == "run_command" and not note:
                 out += ["      " + l for l in _tail(res, tail)]
+    out += _success_lines(meta, check, tail)
+    if show_write:
+        out += _write_lines(msgs, show_write, _needle(meta.get("repo_id", ""), meta.get("task_id", "")), tail)
     return [_mask(line, can) for line in out]
+
+
+def _needle(repo_id: str, task_id: str):
+    """The text a file_contains check looks for (None if unknown)."""
+    try:
+        from bench.common.data import load_repo
+        sc = load_repo(repo_id).tasks[task_id].success_check or {}
+    except Exception:
+        return None
+    return sc.get("text", sc.get("contains"))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -115,12 +172,16 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--task", default="", help="only runs of this task id")
     ap.add_argument("--output", default="", help="comma-separated steps: show run_command output tails")
     ap.add_argument("--tail", type=int, default=15, help="lines of stdout/stderr per step (default 15)")
+    ap.add_argument("--check", action="store_true", help="show the success-check command's output tail")
+    ap.add_argument("--show-write", default="", metavar="PATH",
+                    help="show the agent's last write_file content for PATH (masked)")
     a = ap.parse_args(argv)
     runs = sorted({p.parent for r in a.roots for p in ([r / "meta.json"] + list(r.rglob("meta.json")))
                    if p.is_file() and (p.parent / "messages.json").is_file()})
     for run in runs:
         try:
-            lines = inspect(run, {int(x) for x in a.output.split(",") if x.strip()}, a.tail)
+            lines = inspect(run, {int(x) for x in a.output.split(",") if x.strip()}, a.tail,
+                            a.check, a.show_write)
         except (OSError, json.JSONDecodeError) as e:
             print(f"== {run}: unreadable ({e})")
             continue

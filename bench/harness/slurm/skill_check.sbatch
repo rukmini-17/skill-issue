@@ -58,5 +58,5 @@ RC=$?
 echo "pilot exit $RC (0 = all done, 2 = runs left; resubmit to resume)"
 echo
 echo "===== skill-load check: $MODEL, invocation $INVOCATION ====="
-"$PY" -m bench.harness.pilot report --root "$OUT" --tasks "$TASKS"
+"$PY" -m bench.harness.pilot report --root "$OUT" --tasks "$TASKS" --model "$MODEL" --timing
 exit $RC

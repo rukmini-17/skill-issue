@@ -229,9 +229,23 @@ def test_report_lines_and_skill_check_job(tmp_path, capsys):
     assert "| q14+explicit-v2 | ops-office-t01 r0 | s | None | False | True | True | done | 3 | 10 |" in out
     assert "| q14+explicit-v2 | ops-office-t05 r0 | s | None | True | True | True |" in out
     assert "shop-web-t05" not in out and "2 completed runs: skill_load 1, skill_used 2, success 2" in out
+    _fake_run(root, "q32+explicit-v2", "ops-office-t01", 0, False, True)
+    other = tmp_path / "nat"
+    _fake_run(other, "q14", "ops-office-t01", 0, False, False)
+    assert pilot.main(["report", "--root", str(root), "--root", str(other), "--model", "q14", "--timing"]) == 0
+    out = capsys.readouterr().out
+    assert "q32" not in out and "| q14 | ops-office-t01 r0 |" in out and "4 completed runs" in out
+    assert "| done | 3 | 10 | - | 50 | 50 | 17 | 3 | None |" in out      # no model_s in the fake meta
+    assert "| q14+explicit-v2 | 3 | 3.0 | 10 | - | 50 | 17 | 3 | done 3 |" in out
+    assert pilot.main(["report", "--root", str(root), "--root", str(other), "--model", "q14",
+                       "--timing", "--common-tasks"]) == 0
+    out = capsys.readouterr().out
+    assert "2 completed runs" in out and "ops-office-t05" not in out
+    assert "| q14 | 1 |" in out and "| q14+explicit-v2 | 1 |" in out
     sb = (ROOT / "bench/harness/slurm/skill_check.sbatch").read_text()
     assert "#SBATCH --time=02:00:00" in sb and 'INVOCATION="${INVOCATION:-explicit}"' in sb
     assert "ops-office-t05,ops-office-t01,orders-api-t01,shop-web-t05,release-tools-t03" in sb
     assert "--repeats 1" in sb and "--run-timeout" in sb and "--deadline-s" in sb and "pilot report" in sb
+    assert '--model "$MODEL" --timing' in sb
     assert "skill-check)" in (ROOT / "bench/harness/scripts/cook_submit.sh").read_text()
     assert '--invocation "${INVOCATION:-natural}"' in (ROOT / "bench/harness/slurm/first_run_t05.sbatch").read_text()
