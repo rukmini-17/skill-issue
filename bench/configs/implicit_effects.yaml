@@ -54,3 +54,10 @@ effects:
     when_delegated_exec: ["npm install"]
     read: ["node_modules/**"]
     write: ["node_modules/**"]
+
+  # fix/matcher-pilot — ruff reads and writes its cache. Some tasks delegate only the write
+  # (.ruff_cache/** in delegation.write), so ruff's own cache reads showed as P2.
+  - id: ruff-cache
+    when_delegated_exec: [ruff, "python -m ruff", "python3 -m ruff"]
+    read: [".ruff_cache/**"]
+    write: [".ruff_cache/**"]

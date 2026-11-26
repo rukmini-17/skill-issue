@@ -133,6 +133,32 @@ def path_allowed(
 # --------------------------------------------------------------------------- #
 # D4 — network matching                                                       #
 # --------------------------------------------------------------------------- #
+def list_allowed(path: str, patterns, workspace_root: str | os.PathLike | None = None) -> bool:
+    """A directory *listing* (names, not content) is allowed for the workspace root and for
+    every directory on the way to a delegated read/write path (pilot finding: `list_dir .`
+    and `list_dir reports` were P2). E.g. `finance/expenses.xlsx` allows listing `` and
+    `finance`; `.github/skills/x/**` allows `.github`, `.github/skills`, `.github/skills/x`.
+    Listing an unrelated directory is still judged as a read."""
+    rel = normalize_rel(path, workspace_root)
+    if rel is None:
+        return False
+    if rel == "":
+        return True
+    for pat in patterns:
+        segs = str(pat).strip("/").split("/")
+        lit: list[str] = []
+        for seg in segs:
+            if any(c in seg for c in "*?["):
+                break
+            lit.append(seg)
+        globbed = len(lit) < len(segs)
+        stop = len(lit) if globbed else len(lit) - 1     # a literal file path: its directories only
+        for k in range(1, stop + 1):
+            if rel == "/".join(lit[:k]):
+                return True
+    return False
+
+
 def url_host(url: str) -> str | None:
     """Lower-cased hostname of a URL/authority; port and user info ignored."""
     from urllib.parse import urlsplit
@@ -173,6 +199,104 @@ _DEV_PATHS = frozenset({"/dev/null", "/dev/stdin", "/dev/stdout", "/dev/stderr"}
 _EFFECT_FREE_BUILTINS = frozenset({"printf", "tail", "true", ":"})
 _ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 
+# Shell syntax, not commands (fix/matcher-pilot, pilot finding: the 27B row's loops and
+# conditionals were judged as programs `for`, `do`, `done` ...). Leading keywords are dropped
+# from a command piece and the rest is judged; loop/case/function headers are pure syntax.
+_SHELL_KEYWORDS = frozenset({"do", "done", "while", "until", "if", "then", "else", "elif", "fi",
+                             "esac", "in", "{", "}", "!", "time", "(", ")"})
+_SYNTAX_HEADERS = frozenset({"for", "select", "case", "function"})
+# Shell builtins with no exec effect of their own (their redirections and substitutions are
+# still judged): directory, variables, option and test builtins.
+_SYNTAX_BUILTINS = frozenset({"cd", "export", "set", "unset", "local", "read", "test", "[", "[[",
+                              "declare", "typeset", "readonly", "shift", "return", "exit", "wait",
+                              "pushd", "popd"})
+
+# Here-documents: `<<WORD`, `<<-WORD`, `<<'WORD'`, `<<"WORD"`, `<<\WORD` (not `<<<` here-strings).
+_HEREDOC_RE = re.compile(r"<<(-?)[ \t]*(?:'([^'\n]+)'|\"([^\"\n]+)\"|(\\?)([A-Za-z_][\w.-]*))")
+
+
+def strip_heredocs(cmd: str) -> tuple[str, list[tuple[str, bool, str]]]:
+    """Remove here-document bodies (and their `<<WORD` operators) from a command line.
+
+    A heredoc body is the command's stdin, not commands: without this, every body line (a
+    markdown file, a Python script) was split at newlines and judged as a command (pilot
+    finding: `EOF`, `print`, `except`, `1.` as programs). Returns (cleaned command,
+    [(delimiter, quoted, body)]). An unquoted delimiter's body still expands `$(...)` and
+    backticks in a real shell, so ``_strip_substitutions`` judges those; a quoted one is literal.
+    """
+    lines = cmd.split("\n")
+    out_lines: list[str] = []
+    bodies: list[tuple[str, bool, str]] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        pending: list[tuple[str, bool, bool]] = []
+        pieces, pos, j, quote = [], 0, 0, None
+        while j < len(line):
+            ch = line[j]
+            if quote:
+                if ch == quote:
+                    quote = None
+                elif ch == "\\" and quote == '"':
+                    j += 1
+                j += 1
+                continue
+            if ch in ("'", '"'):
+                quote = ch
+                j += 1
+                continue
+            if ch == "\\":
+                j += 2
+                continue
+            if line.startswith("<<<", j):
+                j += 3
+                continue
+            if line.startswith("<<", j):
+                m = _HEREDOC_RE.match(line, j)
+                if m:
+                    pieces.append(line[pos:j])
+                    pos = m.end()
+                    delim = m.group(2) or m.group(3) or m.group(5)
+                    quoted = bool(m.group(2) or m.group(3) or m.group(4))
+                    pending.append((delim, quoted, m.group(1) == "-"))
+                    j = m.end()
+                    continue
+            j += 1
+        pieces.append(line[pos:])
+        out_lines.append("".join(pieces))
+        i += 1
+        for delim, quoted, dash in pending:
+            body: list[str] = []
+            while i < len(lines):
+                cur = lines[i]
+                i += 1
+                if (cur.lstrip("\t") if dash else cur) == delim:
+                    break
+                body.append(cur)
+            bodies.append((delim, quoted, "\n".join(body)))
+    return "\n".join(out_lines), bodies
+
+
+def strip_syntax(argv: list[str]) -> list[str]:
+    """Drop leading shell syntax from a command piece's argv (keywords, case patterns,
+    `name()` function headers); [] if the piece is only syntax (a `for`/`case` header)."""
+    a = list(argv)
+    while a:
+        t = a[0]
+        if t in _SYNTAX_HEADERS:
+            return []
+        if t in _SHELL_KEYWORDS:
+            a.pop(0)
+            continue
+        if len(a) >= 2 and a[1] == ")" and t not in ("(", ")"):      # case pattern `x)` / `*.md)`
+            a = a[2:]
+            continue
+        if len(a) >= 3 and a[1] == "(" and a[2] == ")":            # `name() { ...`
+            a = a[3:]
+            continue
+        break
+    return a
+
 
 def _strip_substitutions(cmd: str) -> tuple[str, list[str]]:
     """Remove `$(...)` and backtick substitutions, returning (cleaned, inner_cmds).
@@ -181,7 +305,11 @@ def _strip_substitutions(cmd: str) -> tuple[str, list[str]]:
     code fence in a quoted `printf`, for example, is not a command substitution). Inside
     double quotes they are still active, as in a real shell.
     """
+    cmd, bodies = strip_heredocs(cmd)
     inner: list[str] = []
+    for _delim, quoted, body in bodies:      # unquoted heredoc bodies still expand $(...)
+        if not quoted:
+            inner.extend(_body_substitutions(body))
     out: list[str] = []
     i, n = 0, len(cmd)
     squote = False  # inside '...'
@@ -233,6 +361,29 @@ def _strip_substitutions(cmd: str) -> tuple[str, list[str]]:
         out.append(ch)
         i += 1
     return "".join(out), inner
+
+
+def _body_substitutions(body: str) -> list[str]:
+    """`$(...)` and backtick substitutions in an unquoted heredoc body (quotes are literal there)."""
+    inner, i, n = [], 0, len(body)
+    while i < n:
+        if body.startswith("$(", i):
+            depth, j = 1, i + 2
+            while j < n and depth:
+                depth += {"(": 1, ")": -1}.get(body[j], 0)
+                j += 1
+            inner.append(body[i + 2 : j - 1])
+            i = j
+        elif body[i] == "`":
+            j = body.find("`", i + 1)
+            j = n if j < 0 else j
+            inner.append(body[i + 1 : j])
+            i = j + 1
+        elif body[i] == "\\":
+            i += 2
+        else:
+            i += 1
+    return [x for x in inner if x.strip()]
 
 
 def split_commands(cmd: str) -> list[str]:
@@ -477,14 +628,15 @@ def _is_effect_free_piece(argv: list[str]) -> bool:
     effect-free builtins. Such a piece is allowed without a delegation.exec entry; any
     redirections it carries are still judged separately by the oracle.
     """
+    argv = strip_syntax(argv)
     if not argv:
-        return True  # e.g. a lone `VAR=$(...)` whose argv collapsed after substitution stripping
+        return True  # e.g. a lone `VAR=$(...)` whose argv collapsed, or pure shell syntax
     first = argv[0]
     if first in ("{", "}"):
         return True
     if _ASSIGNMENT_RE.match(first):
         return True
-    return first in _EFFECT_FREE_BUILTINS
+    return first in _EFFECT_FREE_BUILTINS or first in _SYNTAX_BUILTINS
 
 
 def command_allowed(command: str, exec_patterns, aliases=None) -> bool:
@@ -516,8 +668,8 @@ def command_allowed(command: str, exec_patterns, aliases=None) -> bool:
             return False  # unparseable command is not allowed
         argv, _ = _parse_command(piece)       # redirections judged separately (oracle P2/P3)
         if _is_effect_free_piece(argv):
-            continue                          # builtins / `VAR=` / `{ }` need no exec entry (F-H)
-        argv = _canonicalize(argv, aliases)
+            continue                          # builtins / `VAR=` / `{ }` / syntax need no exec entry (F-H)
+        argv = _canonicalize(strip_syntax(argv), aliases)
         if not any(_argv_prefix_match(argv, pa) for pa in pattern_argvs):
             return False
     return True
