@@ -4,14 +4,14 @@
 # llama-server on the node, waits for it, runs its shard, and stops the server.
 # HUMANS LAUNCH THIS (Part 0 rule 9). On COOK (ssh -l 'rnazre@umass.edu' cook.cs.umass.edu),
 # from the repo root, venv made on the login node. Use the submit helper, which
-# picks the partition from models.yaml and adds --mem=40G on rtx:
+# picks the partition from models.yaml and sets --mem (gtx 16G, t4 24G, rtx 40G):
 #
-#   sh bench/harness/scripts/pilot_cook_submit.sh qwen3-8b-llamacpp
+#   sh bench/harness/scripts/cook_submit.sh pilot qwen3-8b-llamacpp
 #   squeue -u $USER
 #   tail -f runs/pilot/logs/cdb-pilot-<jobid>_<shard>.out
 #   .venv/bin/python -m bench.harness.pilot run --model qwen3-8b-llamacpp --dry-run   # what is left
 #
-# Modules and Python per partition: bench/harness/slurm/cook_env.sh. Prefer gtx
+# Modules, Python and the server launch: bench/harness/slurm/cook_env.sh. Prefer gtx
 # (t4/rtx queues can wait long). One gtx node has reported a faulty GPU3; if a shard
 # fails with a CUDA error on it, resubmit with --exclude=<that node>.
 # The array has 8 shards (8 Slurm jobs). Runs are resumable: resubmitting the
@@ -47,11 +47,11 @@ echo "job ${SLURM_JOB_ID:-?} shard $SHARD/$SHARDS model $MODEL node $(hostname) 
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/dev/null || true
 echo "server: $SERVE"
 SLOG="runs/pilot/logs/llama-server-${SLURM_JOB_ID:-x}_${SHARD}.log"
-eval "$SERVE" > "$SLOG" 2>&1 &
-SRV=$!
+eval "cdb_start_server \"\$SLOG\" $SERVE"
 trap 'kill $SRV 2>/dev/null; wait $SRV 2>/dev/null' EXIT
 
-"$PY" -m bench.backends wait "$MODEL" --timeout 900 || { echo "server not ready; see $SLOG"; tail -n 30 "$SLOG"; exit 3; }
+"$PY" -m bench.backends wait "$MODEL" --timeout 900 || { echo "server not ready; see $SLOG"; cdb_log_buffers "$SLOG"; tail -n 30 "$SLOG"; exit 3; }
+cdb_log_buffers "$SLOG"
 
 ELAPSED=$(( $(date +%s) - START ))
 "$PY" -m bench.harness.pilot run --model "$MODEL" --shard "$SHARD/$SHARDS" --workers 1 \

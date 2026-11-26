@@ -403,35 +403,57 @@ Checkpoint 4 (reference replay) is a joint A+B step and was skipped for now.
 ## COOK and Tinker facts (2026-11-25)
 
 Checked on the cluster by the team, and from the Tinker docs (Compatible APIs, Models &
-Pricing). Applied to `bench/configs/models.yaml`, `slurm/cook_env.sh`, `slurm/pilot_cook.sbatch`,
-`scripts/pilot_cook_submit.sh` and `bench/backends/tinker.py`.
+Pricing), and CSCF's example jobs printed by `scripts/cook_probe.sh` (2026-11-25). Applied to
+`bench/configs/models.yaml`, `slurm/cook_env.sh`, `slurm/pilot_cook.sbatch`,
+`slurm/first_run_t05.sbatch`, `scripts/cook_submit.sh` and `bench/backends/{llamacpp,tinker}.py`.
 
 **COOK**
 - Login: `ssh -l 'rnazre@umass.edu' cook.cs.umass.edu` (campus account).
 - GGUFs: `/nfs/opt/models/Qwen3-<N>B-GGUF/<revision>/Qwen3-<N>B-Q4_K_M.gguf`; revisions
   4B `bc640142…`, 8B `7c41481f…`, 14B `530227a7…`, 32B `938a7432…` (full hashes in models.yaml).
+  File sizes: 4B 2.5 GB, 8B 5.0 GB, 14B 9.0 GB, 32B 19.8 GB.
 - GPUs: `gtx` GTX 1080 Ti 11 GB (7–8 nodes; one node reported a faulty GPU3), `t4` Tesla T4
   15 GB (2 nodes × 3), `rtx` RTX PRO 4500 Blackwell 32 GB (1 node × 2). 2-hour job limit on
   all. t4/rtx queues can wait long, so prefer gtx.
-- llama.cpp modules: gtx `llm-r580-llamacpp/2026.10` (loads `llm-r580/2026.09`, Python 3.13;
+- llama.cpp modules: gtx `llm-r580-llamacpp/2026.10` (loads `llm-r580/2026.09`, Python 3.13.15;
   sm_52/61); t4/rtx `llm-r615-llamacpp/2026.11` (CUDA 12.8; sm_75/sm_120). They conflict;
   r615 leaves the Python selection alone, so t4/rtx jobs also load `python/3.13.15`. Both
-  builds have `--jinja` (default on), `--reasoning-format`, `--alias`. The module notes say
-  Flash Attention off and layer splitting, so every entry sets `flash_attn: false` and the
-  server command passes `--flash-attn off`.
+  ship llama-server 0.5.0 (commit 7fe450e) with `--jinja` (default on), `--reasoning-format`,
+  `--alias`, `-fa on|off|auto` (default auto), `-sm`, `-ctk/-ctv`.
+- Server flags follow CSCF's validated examples: `-ngl 999 -sm none -fa off -fit off -b 128
+  -ub 128 -t $SLURM_CPUS_PER_TASK`, with `OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK`. Set per entry
+  in models.yaml (`server:`). The examples' sampling flags (temp 0.7, top-k 20, presence
+  penalty 1.5) are not used; decoding is ours (agent temperature 0.2, D11).
+- Job setup (`slurm/cook_env.sh`), mirroring the examples: `. /etc/profile`, `module purge`,
+  the partition's module, a check that `CUDA_VISIBLE_DEVICES` is set, the harness import
+  check. llama-server starts directly if `nvidia-smi` sees the GPU in the batch step, else
+  through `srun --ntasks=1 --gres=gpu:1` (how the examples launch). The log says which.
 - Placement and context (recorded per entry as `server.ctx_size`, reported in
   `meta.json` → `model_config.ctx_size`): 4B and 8B on gtx, 14B on t4, all at 16384. 32B on rtx
   at 16384. 32768 would need a quantized KV cache, and llama.cpp needs Flash Attention for a
   quantized V cache, so check the build first; that would be a separate entry. 32B is also
-  the default for C's `llm_reviewer` and D's attacker. rtx jobs get `--mem=40G` (CSCF's 32B example
-  used 40 GiB of system RAM).
-- CSCF verified Qwen3-14B on one T4 and Qwen3-32B on one RTX with `llm-r615-llamacpp`. Their
-  example jobs are at `$LLAMA_CPP_HOME/share/examples/llama-14b-t4.sbatch` and
-  `llama-32b-rtx.sbatch`. `scripts/cook_probe.sh` prints them; the t4/rtx server flags are to
-  be aligned with them once the output is pasted (open question 3).
-- Venv: `.venv` was made under `llm-r580` (Python 3.13.15). `cook_env.sh` uses `.venv-r615`
-  on t4/rtx if it exists, else `.venv`, and fails early if the chosen Python cannot import
-  the harness dependencies. `cook_probe.sh` checks `.venv` under `python/3.13.15`.
+  the default for C's `llm_reviewer` and D's attacker. Memory per job: gtx 16G, t4 24G,
+  rtx 40G, from CSCF's examples (`scripts/cook_submit.sh`).
+- CSCF verified Qwen3-14B on one T4 and Qwen3-32B on one RTX with `llm-r615-llamacpp`
+  (`$LLAMA_CPP_HOME/share/examples/llama-14b-t4.sbatch`, `llama-32b-rtx.sbatch`), but only at
+  `-c 2048`. Our 16384 is untested for memory; see "Memory at 16384" below.
+- Venv: one `.venv` for all partitions. Its python links to
+  `/nfs/opt/modules/software/python/3.13.15/bin/python`, and the probe imported the harness
+  dependencies under both module sets. `cook_env.sh` keeps the import check.
+
+**Memory at 16384** (to fill in from the first job per partition: the "llama-server memory"
+block in `runs/first_run/logs/cdb-first-run-<jobid>.out`)
+
+| partition | model | GPU | expected KV (f16, estimate) | layers offloaded | model buffer | KV buffer | compute buffer | job id | date |
+|---|---|---|---|---|---|---|---|---|---|
+| gtx | qwen3-8b (5.0 GB GGUF) | GTX 1080 Ti 11 GB | 2.25 GiB | | | | | | |
+| gtx | qwen3-4b (2.5 GB) | GTX 1080 Ti 11 GB | 2.25 GiB | | | | | | |
+| t4 | qwen3-14b (9.0 GB) | Tesla T4 15 GB | 2.5 GiB | | | | | | |
+| rtx | qwen3-32b (19.8 GB) | RTX PRO 4500 32 GB | 4.0 GiB | | | | | | |
+
+Estimate: 2 (K, V) × layers × 8 KV heads × 128 head dim × 2 bytes × 16384 tokens, with
+36 / 36 / 40 / 64 layers for 4B / 8B / 14B / 32B (Qwen3 configs). Weights + KV come to about
+7.3 GB of 11 on gtx (8B), 11.7 of 15 on t4 and 24 of 32 on rtx, before compute buffers.
 
 **Tinker**
 - The OpenAI-compatible endpoint takes a base-model ID in `model` (`Qwen/Qwen3-8B`);
@@ -449,10 +471,9 @@ Pricing). Applied to `bench/configs/models.yaml`, `slurm/cook_env.sh`, `slurm/pi
 
 1. IC-2 and IC-3 are pending A's review (IC-1 was approved and is wired).
 2. (closed) Docker mode: untested and not needed, since `netns` works on Colab/A100 and COOK.
-3. COOK, partly answered (see above). Still open: the t4/rtx flags from CSCF's two example
-   jobs (output of `scripts/cook_probe.sh`), and whether `.venv` runs under `python/3.13.15`
-   or a second venv `.venv-r615` is needed. `--gres=gpu:1` is used for all partitions; confirm
-   with the first real run.
+3. COOK, nearly closed (see above). Still open: whether ctx 16384 fits on each partition
+   ("Memory at 16384", from the first job per partition) and whether llama-server sees the
+   GPU without `srun` (the first job's log says which launch it used).
 4. A100: 40 or 80 GB (decides the vLLM 32B entry); is `vllm` installed in the venv or a separate env?
 5. Tinker, mostly answered (see above). Still open: whether `/chat/completions` accepts `tools`
    (run `scripts/tinker_smoke.py`; if it returns structured `tool_calls`, try `tool_mode: native`).

@@ -28,9 +28,11 @@
 # COOK facts (checked on the cluster 2026-11-25; see bench/harness/NOTES.md "COOK"):
 # GGUFs live in a revision subfolder; partitions gtx (GTX 1080 Ti 11 GB), t4
 # (Tesla T4 15 GB), rtx (RTX PRO 4500 Blackwell 32 GB), all with a 2-hour limit.
-# COOK's llama.cpp builds run with Flash Attention off. Still unverified: A100
-# memory (40 or 80 GB) for the vLLM 32B entry; t4/rtx server flags are to be aligned
-# with CSCF's example jobs (llama-14b-t4.sbatch, llama-32b-rtx.sbatch).
+# llama-server 0.5.0 (commit 7fe450e) in both modules. Server flags follow CSCF's
+# validated examples (-ngl 999 -sm none -fa off -fit off -b 128 -ub 128 -t <cpus>);
+# their sampling flags are not used. CSCF validated only a 2048-token context: our
+# 16384 is untested for memory until the first job per partition logs the model and
+# KV buffer sizes (NOTES.md). Still unverified: A100 memory for the vLLM 32B entry.
 
 models:
   # ------------------------------------------------------------ COOK, llama.cpp
@@ -46,7 +48,8 @@ models:
     family: qwen3
     temperature: 0.2
     max_tokens: 4096
-    server: {ctx_size: 16384, n_gpu_layers: 99, flash_attn: false}
+    server: {ctx_size: 16384, n_gpu_layers: 999, split_mode: none, flash_attn: false, fit: false,
+             batch_size: 128, ubatch_size: 128, threads: "${SLURM_CPUS_PER_TASK:-4}"}
 
   qwen3-8b-llamacpp:
     backend: llamacpp
@@ -60,7 +63,8 @@ models:
     family: qwen3
     temperature: 0.2
     max_tokens: 4096
-    server: {ctx_size: 16384, n_gpu_layers: 99, flash_attn: false}
+    server: {ctx_size: 16384, n_gpu_layers: 999, split_mode: none, flash_attn: false, fit: false,
+             batch_size: 128, ubatch_size: 128, threads: "${SLURM_CPUS_PER_TASK:-4}"}
 
   qwen3-14b-llamacpp:
     backend: llamacpp
@@ -74,7 +78,8 @@ models:
     family: qwen3
     temperature: 0.2
     max_tokens: 4096
-    server: {ctx_size: 16384, n_gpu_layers: 99, flash_attn: false}
+    server: {ctx_size: 16384, n_gpu_layers: 999, split_mode: none, flash_attn: false, fit: false,
+             batch_size: 128, ubatch_size: 128, threads: "${SLURM_CPUS_PER_TASK:-4}"}
 
   # 32B on rtx: 16384 by default. 32768 only with a quantized KV cache
   # (--cache-type-k/-v q8_0), and only if this build allows it with Flash Attention
@@ -92,7 +97,8 @@ models:
     family: qwen3
     temperature: 0.2
     max_tokens: 4096
-    server: {ctx_size: 16384, n_gpu_layers: 99, flash_attn: false}
+    server: {ctx_size: 16384, n_gpu_layers: 999, split_mode: none, flash_attn: false, fit: false,
+             batch_size: 128, ubatch_size: 128, threads: "${SLURM_CPUS_PER_TASK:-4}"}
 
   # ------------------------------------------------------------------ A100, vLLM
   qwen3-4b-vllm:

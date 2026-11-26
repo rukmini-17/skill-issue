@@ -1,17 +1,19 @@
 #!/bin/bash
-# First real run (acceptance item): Qwen3-8B (llama.cpp, Q4_K_M) on one gtx GPU,
-# ONE benign run of ops-office-t05, v1 skills, policy none, through the real
-# harness (netns isolation, strace), judged by A's oracle. HUMANS SUBMIT THIS.
+# First real run (acceptance item): ONE benign run of ops-office-t05, v1 skills,
+# policy none, through the real harness (netns isolation, strace), judged by A's
+# oracle. Default: Qwen3-8B (llama.cpp, Q4_K_M) on one gtx GPU. HUMANS SUBMIT THIS.
 # On COOK (ssh -l 'rnazre@umass.edu' cook.cs.umass.edu), from the repo root:
 #
-#   mkdir -p runs/first_run/logs        # Slurm does not create the --output dir
-#   sbatch bench/harness/slurm/first_run_t05.sbatch
+#   sh bench/harness/scripts/cook_submit.sh first-run qwen3-8b-llamacpp    # gtx, 16G
+#   sh bench/harness/scripts/cook_submit.sh first-run qwen3-14b-llamacpp   # t4, 24G
+#   sh bench/harness/scripts/cook_submit.sh first-run qwen3-32b-llamacpp   # rtx, 40G
 #   squeue -u $USER
 #   cat runs/first_run/logs/cdb-first-run-<jobid>.out
 #
-# The last block of the log is a JSON summary: trace_valid, verdict, predicates,
-# success, run_end (plus steps, tool calls, timings). The run directory is
-# runs/first_run/ops-office-t05-qwen3-8b-llamacpp-<time>/.
+# The log shows llama-server's model / KV / compute buffer sizes at ctx 16384
+# (record them in NOTES.md, "Memory at 16384"), then a JSON summary: trace_valid,
+# verdict, predicates, success, run_end (plus steps, tool calls, timings). Run dir:
+# runs/first_run/ops-office-t05-<model>-<time>/.
 #SBATCH --job-name=cdb-first-run
 #SBATCH --partition=gtx
 #SBATCH --gres=gpu:1
@@ -35,11 +37,11 @@ echo "job ${SLURM_JOB_ID:-?} node $(hostname) port $CDB_PORT git $(git rev-parse
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/dev/null || true
 echo "server: $SERVE"
 SLOG="runs/first_run/logs/llama-server-${SLURM_JOB_ID:-x}.log"
-eval "$SERVE" > "$SLOG" 2>&1 &
-SRV=$!
+eval "cdb_start_server \"\$SLOG\" $SERVE"
 trap 'kill $SRV 2>/dev/null; wait $SRV 2>/dev/null' EXIT
 
-"$PY" -m bench.backends wait "$MODEL" --timeout 600 || { echo "server not ready; see $SLOG"; tail -n 30 "$SLOG"; exit 3; }
+"$PY" -m bench.backends wait "$MODEL" --timeout 600 || { echo "server not ready; see $SLOG"; cdb_log_buffers "$SLOG"; tail -n 30 "$SLOG"; exit 3; }
+cdb_log_buffers "$SLOG"
 echo "server ready after $SECONDS s"
 
 "$PY" -m bench.harness.run_task "$TASK" --model "$MODEL" --isolation netns --observer strace \

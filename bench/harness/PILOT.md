@@ -38,36 +38,37 @@ lists the 165 runs, and `.venv/bin/python -m bench.backends serve-cmd <model>` p
 
 **COOK (llama.cpp, Q4_K_M).** Log in with `ssh -l 'rnazre@umass.edu' cook.cs.umass.edu`, then:
 
-1. Once, on the login node: `bash bench/harness/scripts/cook_probe.sh 2>&1 | tee runs/cook_probe.txt`.
-   It prints CSCF's t4/rtx example jobs, the llama-server flags, the GGUF files, and whether
-   `.venv` imports under `llm-r615-llamacpp/2026.11` + `python/3.13.15`. If that last check
-   fails, make a second venv for t4/rtx (`cook_env.sh` picks it up automatically):
+1. Once, on the login node (done 2026-11-25): `bash bench/harness/scripts/cook_probe.sh 2>&1 | tee runs/cook_probe.txt`
+   prints CSCF's example jobs, the llama-server flags, the GGUF files and the venv check.
+   One `.venv` works on every partition (its python links to `python/3.13.15`).
+2. First real run, once per partition before its pilot (one benign ops-office-t05 run,
+   30 minutes). The helper takes the partition from models.yaml and sets `--mem`
+   (gtx 16G, t4 24G, rtx 40G):
 
    ```sh
-   module purge; module load llm-r615-llamacpp/2026.11 python/3.13.15
-   python3 -m venv .venv-r615 && .venv-r615/bin/pip install pyyaml jsonschema pytest openpyxl openai httpx
-   ```
-2. First real run (one benign ops-office-t05 run, Qwen3-8B on gtx, 30 minutes):
-
-   ```sh
-   mkdir -p runs/first_run/logs        # Slurm does not create the --output dir
-   sbatch bench/harness/slurm/first_run_t05.sbatch
+   sh bench/harness/scripts/cook_submit.sh first-run qwen3-8b-llamacpp     # gtx
    squeue -u $USER
-   cat runs/first_run/logs/cdb-first-run-<jobid>.out    # JSON summary at the end
+   cat runs/first_run/logs/cdb-first-run-<jobid>.out    # buffer sizes, then the JSON summary
    ```
-3. Pilot, one array of 8 shards per model (2-hour limit each). The helper takes the
-   partition from models.yaml and adds `--mem=40G` on rtx:
+
+   Copy the "llama-server memory" block into NOTES.md ("Memory at 16384"): CSCF validated
+   only a 2048-token context. Repeat with `qwen3-14b-llamacpp` (t4) and `qwen3-32b-llamacpp` (rtx).
+3. Pilot, one array of 8 shards per model (2-hour limit each):
 
    ```sh
-   sh bench/harness/scripts/pilot_cook_submit.sh qwen3-8b-llamacpp      # gtx; also qwen3-4b
-   sh bench/harness/scripts/pilot_cook_submit.sh qwen3-14b-llamacpp     # t4
-   sh bench/harness/scripts/pilot_cook_submit.sh qwen3-32b-llamacpp     # rtx
+   sh bench/harness/scripts/cook_submit.sh pilot qwen3-8b-llamacpp      # gtx; also qwen3-4b
+   sh bench/harness/scripts/cook_submit.sh pilot qwen3-14b-llamacpp     # t4
+   sh bench/harness/scripts/cook_submit.sh pilot qwen3-32b-llamacpp     # rtx
    ```
 
    Resubmit the same command to finish runs a shard did not reach (exit code 2 in the log).
-   Modules per partition are in `bench/harness/slurm/cook_env.sh` (gtx: `llm-r580-llamacpp/2026.10`;
-   t4/rtx: `llm-r615-llamacpp/2026.11` + `python/3.13.15`). Prefer gtx; t4/rtx queues can wait.
-   Context is 16384 for every COOK entry and Flash Attention is off.
+   `bench/harness/slurm/cook_env.sh` does the setup the way CSCF's examples do (`. /etc/profile`,
+   `module purge`, gtx `llm-r580-llamacpp/2026.10` or t4/rtx `llm-r615-llamacpp/2026.11` +
+   `python/3.13.15`, a `CUDA_VISIBLE_DEVICES` check, `OMP_NUM_THREADS`). It starts llama-server
+   directly if the batch step sees the GPU, else through `srun --ntasks=1 --gres=gpu:1`.
+   Server flags follow CSCF's (`-ngl 999 -sm none -fa off -fit off -b 128 -ub 128 -t <cpus>`)
+   with context 16384; decoding is ours (temperature 0.2), not the examples' sampling flags.
+   Prefer gtx; t4/rtx queues can wait.
 
 **A100 (vLLM, bf16).** `bash bench/harness/scripts/pilot_vllm.sh qwen3-8b-vllm` (`WORKERS=4` by default).
 

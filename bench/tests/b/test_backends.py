@@ -402,6 +402,12 @@ def test_shipped_models_yaml(monkeypatch):
         assert make_model(n, env=env).describe()["ctx_size"] == (c.get("server") or {}).get("ctx_size"), n
         if c["backend"] == "llamacpp":
             assert c["server"]["ctx_size"] == 16384 and c["server"]["flash_attn"] is False, n
+            cmd = make_model(n, env={**env, "SLURM_CPUS_PER_TASK": "6"}).server_command()
+            flags = {cmd[i]: cmd[i + 1] for i in range(len(cmd) - 1) if cmd[i].startswith("-")}
+            assert {k: flags[k] for k in ("-ngl", "-sm", "--flash-attn", "-fit", "-b", "-ub", "-t", "-c")} == {
+                "-ngl": "999", "-sm": "none", "--flash-attn": "off", "-fit": "off", "-b": "128", "-ub": "128",
+                "-t": "6", "-c": "16384"}, n                         # CSCF's validated COOK flags
+            assert "--temp" not in cmd and "--top-k" not in cmd, n  # decoding stays in the request
             assert "-GGUF/" in c["model_file"] and c["model_file"].endswith("-Q4_K_M.gguf"), n
     assert make_model("qwen3-8b-tinker", env=env).model == "Qwen/Qwen3-8B"
     assert "qwen3-32b-tinker" not in cfg                         # retired on Tinker 2026-06-12
