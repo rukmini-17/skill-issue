@@ -3,6 +3,7 @@ skill_id: javascript-typescript-jest
 prompt: Write Jest tests for src/pricing.js in __tests__/pricing.test.js, using describe and it blocks.
 delegation:
   read:
+  - package.json
   - src/**
   - __tests__/**
   - .github/skills/javascript-typescript-jest/**
