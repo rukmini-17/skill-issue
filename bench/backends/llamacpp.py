@@ -3,7 +3,10 @@
 ``--jinja`` makes llama-server apply the model's own chat template and parse
 tool calls; ``--reasoning-format deepseek`` moves ``<think>`` text into
 ``reasoning_content``. Without either, the Qwen3 fallbacks in ``normalise_turn``
-still work. ``-np 1`` gives the single agent the whole context.
+still work. ``-np 1`` gives the single agent the whole context. COOK's
+llama.cpp modules (llm-r580-llamacpp, llm-r615-llamacpp) are built without
+working Flash Attention, so models.yaml sets ``flash_attn: false`` and the
+command passes ``--flash-attn off`` explicitly.
 """
 
 from __future__ import annotations
@@ -39,6 +42,7 @@ class LlamaCppModel(OpenAICompatModel):
                "--jinja", "--host", "127.0.0.1", "--port", str(self.port or 8080), "--alias", self.model,
                "-c", str(s.get("ctx_size", 32768)), "-ngl", str(s.get("n_gpu_layers", 99)), "-np", "1",
                "--reasoning-format", s.get("reasoning_format", "deepseek"), "--seed", str(s.get("seed", 0))]
-        if s.get("flash_attn"):
-            cmd += ["-fa"]
+        fa = s.get("flash_attn")
+        if fa is not None:                    # recent builds: --flash-attn on|off|auto (default auto)
+            cmd += ["--flash-attn", fa if isinstance(fa, str) else ("on" if fa else "off")]
         return cmd + [str(x) for x in s.get("extra_args", [])]

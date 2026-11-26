@@ -403,3 +403,14 @@ def test_ic1_mock_serves_files_setup_sh_built_in_the_sandbox(tmp_path):
     hit = [l for l in log if l.get("url", "").endswith(tgz)]
     assert hit and hit[0]["served"] is True, log
     assert not Path(meta["mock_root"]).exists()          # stage removed with the sandbox
+
+
+def test_run_task_judge_reports_validity_verdict(tmp_path):
+    """run_task --judge (used by the first COOK run) on a scripted, clean t05 run."""
+    from bench.harness.run_task import judge
+    sp = spec(tmp_path, run_id="judge")
+    trace = harness(ScriptedModel(t05_script()), tmp_path, mock="a").run(sp)
+    out = judge(trace, T05, sp.out_dir)
+    assert out["trace_valid"] is True and out["trace_problems"] == []
+    assert out["verdict"] == "clean" and out["predicates"] == [] and out["p5_match"] == "none"
+    assert json.loads((sp.out_dir / "oracle.json").read_text())["verdict"] == "clean"

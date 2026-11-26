@@ -36,20 +36,45 @@ All from the repo root, after `python3 -m venv .venv && .venv/bin/pip install py
 Check first: `.venv/bin/python -m bench.harness.pilot run --model <model> --dry-run`
 lists the 165 runs, and `.venv/bin/python -m bench.backends serve-cmd <model>` prints the server command.
 
-**COOK (llama.cpp, Q4_K_M).** One array of 8 shards per model, 2-hour limit each:
+**COOK (llama.cpp, Q4_K_M).** Log in with `ssh -l 'rnazre@umass.edu' cook.cs.umass.edu`, then:
 
-```sh
-MODEL=qwen3-8b-llamacpp
-PART=$(.venv/bin/python -m bench.backends get $MODEL partition)
-sbatch -p "$PART" --export=ALL,MODEL=$MODEL bench/harness/slurm/pilot_cook.sbatch
-```
+1. Once, on the login node: `bash bench/harness/scripts/cook_probe.sh 2>&1 | tee runs/cook_probe.txt`.
+   It prints CSCF's t4/rtx example jobs, the llama-server flags, the GGUF files, and whether
+   `.venv` imports under `llm-r615-llamacpp/2026.11` + `python/3.13.15`. If that last check
+   fails, make a second venv for t4/rtx (`cook_env.sh` picks it up automatically):
 
-Resubmit the same command to finish runs a shard did not reach (exit code 2 in the log).
+   ```sh
+   module purge; module load llm-r615-llamacpp/2026.11 python/3.13.15
+   python3 -m venv .venv-r615 && .venv-r615/bin/pip install pyyaml jsonschema pytest openpyxl openai httpx
+   ```
+2. First real run (one benign ops-office-t05 run, Qwen3-8B on gtx, 30 minutes):
+
+   ```sh
+   mkdir -p runs/first_run/logs        # Slurm does not create the --output dir
+   sbatch bench/harness/slurm/first_run_t05.sbatch
+   squeue -u $USER
+   cat runs/first_run/logs/cdb-first-run-<jobid>.out    # JSON summary at the end
+   ```
+3. Pilot, one array of 8 shards per model (2-hour limit each). The helper takes the
+   partition from models.yaml and adds `--mem=40G` on rtx:
+
+   ```sh
+   sh bench/harness/scripts/pilot_cook_submit.sh qwen3-8b-llamacpp      # gtx; also qwen3-4b
+   sh bench/harness/scripts/pilot_cook_submit.sh qwen3-14b-llamacpp     # t4
+   sh bench/harness/scripts/pilot_cook_submit.sh qwen3-32b-llamacpp     # rtx
+   ```
+
+   Resubmit the same command to finish runs a shard did not reach (exit code 2 in the log).
+   Modules per partition are in `bench/harness/slurm/cook_env.sh` (gtx: `llm-r580-llamacpp/2026.10`;
+   t4/rtx: `llm-r615-llamacpp/2026.11` + `python/3.13.15`). Prefer gtx; t4/rtx queues can wait.
+   Context is 16384 for every COOK entry and Flash Attention is off.
 
 **A100 (vLLM, bf16).** `bash bench/harness/scripts/pilot_vllm.sh qwen3-8b-vllm` (`WORKERS=4` by default).
 
-**Tinker.** `MAX_TOKENS=<cap> bash bench/harness/scripts/pilot_tinker.sh qwen3-8b-tinker`.
-Smoke-test with `TASKS=ops-office-t05 REPEATS=1` first.
+**Tinker (Qwen/Qwen3-8B, $0.60 per million sampled tokens).** First the one-call check:
+`TINKER_API_KEY=... .venv/bin/python bench/harness/scripts/tinker_smoke.py`. Then
+`MAX_TOKENS=<cap> bash bench/harness/scripts/pilot_tinker.sh qwen3-8b-tinker`, smoke-tested with
+`TASKS=ops-office-t05 REPEATS=1` first. Qwen3-32B is retired on Tinker; 4B/14B are not offered.
 
 Outputs: `runs/pilot/<model>/<task_id>/r<k>/` (`meta.json`, `trace.jsonl`,
 `success.json`, `messages.json`, `mock.jsonl`), `runs/pilot/<model>/progress.jsonl`,

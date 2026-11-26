@@ -326,6 +326,10 @@ def test_server_commands():
     assert cmd[0] == "/opt/llama-server" and cmd[cmd.index("-m") + 1] == "/m/Qwen3-8B-Q4_K_M.gguf"
     assert "--jinja" in cmd and cmd[cmd.index("--port") + 1] == "8124" and cmd[cmd.index("-np") + 1] == "1"
     assert cmd[cmd.index("--host") + 1] == "127.0.0.1" and cmd[-1] == "--no-mmap"
+    assert "--flash-attn" not in cmd                              # build default unless set
+    off = LlamaCppModel("l", "http://127.0.0.1:8124/v1", "q", model_file="/m/x.gguf",
+                        server={"flash_attn": False}).server_command()
+    assert off[off.index("--flash-attn") + 1] == "off"
     with pytest.raises(ValueError):
         LlamaCppModel("l", "http://x/v1", "m").server_command()
     with pytest.raises(NotImplementedError):
@@ -339,8 +343,10 @@ def test_tinker_backend(tmp_path):
         make_model("fake", path=p, env={"TK": "k"})
     with pytest.raises(ConfigError, match="TK"):
         make_model("fake", path=p, env={"CDB_T": "tinker://x/sampler_weights/1"})
-    with pytest.raises(ValueError, match="tinker://"):
-        make_model("fake", path=p, env={"CDB_T": "Qwen/Qwen3-8B", "TK": "k"})
+    for bad in ("qwen3-8b", "Qwen/Qwen3-8B/extra", "http://x/y"):
+        with pytest.raises(ValueError, match="tinker://"):
+            make_model("fake", path=p, env={"CDB_T": bad, "TK": "k"})
+    assert make_model("fake", path=p, env={"CDB_T": "Qwen/Qwen3-8B", "TK": "k"}).model == "Qwen/Qwen3-8B"
     m = make_model("fake", path=p, env={"CDB_T": "tinker://x/sampler_weights/1", "TK": "k"})
     assert m.tool_mode == "prompt" and m.ready() is True
     assert "server_info" not in m.describe()                     # no API call for metadata
@@ -380,7 +386,7 @@ def test_cdb_models_env_and_run_seed(tmp_path, monkeypatch):
 def test_shipped_models_yaml(monkeypatch):
     monkeypatch.delenv("CDB_MODELS", raising=False)
     cfg = load_models()
-    env = {"CDB_TINKER_QWEN3_8B": "tinker://x/s/1", "CDB_TINKER_QWEN3_32B": "tinker://y/s/1", "TINKER_API_KEY": "k"}
+    env = {"TINKER_API_KEY": "k"}
     for name in cfg:
         m = make_model(name, env=env)
         assert m.temperature == 0.2 and m.family == "qwen3" and m.quantization and m.hardware
@@ -392,6 +398,13 @@ def test_shipped_models_yaml(monkeypatch):
     parts = {n: c["partition"] for n, c in cfg.items() if c["backend"] == "llamacpp"}
     assert parts == {"qwen3-4b-llamacpp": "gtx", "qwen3-8b-llamacpp": "gtx", "qwen3-14b-llamacpp": "t4",
                      "qwen3-32b-llamacpp": "rtx"}
+    for n, c in cfg.items():                                     # ctx recorded per entry
+        assert make_model(n, env=env).describe()["ctx_size"] == (c.get("server") or {}).get("ctx_size"), n
+        if c["backend"] == "llamacpp":
+            assert c["server"]["ctx_size"] == 16384 and c["server"]["flash_attn"] is False, n
+            assert "-GGUF/" in c["model_file"] and c["model_file"].endswith("-Q4_K_M.gguf"), n
+    assert make_model("qwen3-8b-tinker", env=env).model == "Qwen/Qwen3-8B"
+    assert "qwen3-32b-tinker" not in cfg                         # retired on Tinker 2026-06-12
     assert model_config("qwen3-8b-llamacpp", env={"CDB_PORT": "20001"})["base_url"] == "http://127.0.0.1:20001/v1"
     assert make_model("qwen3-8b-llamacpp", env={"CDB_PORT": "20001"}).port == 20001
     text = (ROOT / "bench/configs/models.yaml").read_text().lower()

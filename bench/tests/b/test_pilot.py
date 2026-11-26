@@ -147,7 +147,16 @@ def test_summary_tables_and_pilot_md_update(tmp_path):
 def test_pilot_scripts_are_well_formed():
     import subprocess
     for p in ("bench/harness/slurm/pilot_cook.sbatch", "bench/harness/scripts/pilot_vllm.sh",
-              "bench/harness/scripts/pilot_tinker.sh"):
+              "bench/harness/scripts/pilot_tinker.sh", "bench/harness/slurm/cook_env.sh",
+              "bench/harness/slurm/first_run_t05.sbatch", "bench/harness/scripts/cook_probe.sh",
+              "bench/harness/scripts/pilot_cook_submit.sh"):
         assert subprocess.run(["bash", "-n", str(ROOT / p)]).returncode == 0, p
     sb = (ROOT / "bench/harness/slurm/pilot_cook.sbatch").read_text()
     assert "#SBATCH --time=02:00:00" in sb and "#SBATCH --array=0-7" in sb and "--deadline-s" in sb
+    assert ". bench/harness/slurm/cook_env.sh" in sb
+    env = (ROOT / "bench/harness/slurm/cook_env.sh").read_text()
+    assert "llm-r580-llamacpp/2026.10" in env and "llm-r615-llamacpp/2026.11 python/3.13.15" in env
+    fr = (ROOT / "bench/harness/slurm/first_run_t05.sbatch").read_text()
+    assert "#SBATCH --partition=gtx" in fr and "#SBATCH --time=00:30:00" in fr and "#SBATCH --gres=gpu:1" in fr
+    assert "--isolation netns --observer strace" in fr and "--judge" in fr
+    assert "--mem=\"$MEM\"" in (ROOT / "bench/harness/scripts/pilot_cook_submit.sh").read_text()

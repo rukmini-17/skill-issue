@@ -5,7 +5,7 @@
 # Tinker's current price so the total stays inside the agreed budget.
 #
 #   export TINKER_API_KEY=...            # never in the repo
-#   export CDB_TINKER_QWEN3_8B=tinker://...   # sampler path for Qwen3-8B
+#   (qwen3-8b-tinker samples the base model Qwen/Qwen3-8B; $0.60 per million sampled tokens)
 #   MAX_TOKENS=2000000 bash bench/harness/scripts/pilot_tinker.sh qwen3-8b-tinker
 #   TASKS=ops-office-t05 REPEATS=1 MAX_TOKENS=100000 bash ...    # smoke test first
 set -u

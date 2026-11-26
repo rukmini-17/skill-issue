@@ -7,8 +7,8 @@
 | 1 sandbox builds a workspace and installs skills | **done** (env mode tested on macOS; netns and docker modes written, not yet run) |
 | 2 monitoring | **done** (green on Colab/A100 image and COOK `gtx`, both in `netns` mode, 2026-11-22) |
 | 3 agent loop | **code done**; t05 passes with a scripted model; real-model run **deferred to the pilot on COOK/Colab** (see checkpoint 3) |
-| 4 replay (with A) | **replay done** (2026-11-23) with A's real oracle and mock: 34/55 clean in env and netns (identical); 21 false violations listed for A in `REPLAY_FINDINGS.md` |
-| 5 backends + pilot | **code done** (2026-11-23); tested against a fake server only; pilot **not launched** (humans launch) |
+| 4 replay (with A) | **done**: 55/55 references clean with success true (netns, strace) on main, tagged `data-v1.1` (2026-11-25); history in `REPLAY_FINDINGS.md` |
+| 5 backends + pilot | **code done**; COOK/Tinker facts applied (2026-11-25); tested against a fake server only; first real run (`slurm/first_run_t05.sbatch`) and pilot **not submitted** (humans submit) |
 
 ## Checkpoint 1 — what was built
 
@@ -400,15 +400,59 @@ Checkpoint 4 (reference replay) is a joint A+B step and was skipped for now.
   Qwen3-8B's 32k-token context, which then shows up as a model error. To size after the pilot.
 - The dev mock is not A's mock; behaviour may differ once A5 lands.
 
+## COOK and Tinker facts (2026-11-25)
+
+Checked on the cluster by the team, and from the Tinker docs (Compatible APIs, Models &
+Pricing). Applied to `bench/configs/models.yaml`, `slurm/cook_env.sh`, `slurm/pilot_cook.sbatch`,
+`scripts/pilot_cook_submit.sh` and `bench/backends/tinker.py`.
+
+**COOK**
+- Login: `ssh -l 'rnazre@umass.edu' cook.cs.umass.edu` (campus account).
+- GGUFs: `/nfs/opt/models/Qwen3-<N>B-GGUF/<revision>/Qwen3-<N>B-Q4_K_M.gguf`; revisions
+  4B `bc640142…`, 8B `7c41481f…`, 14B `530227a7…`, 32B `938a7432…` (full hashes in models.yaml).
+- GPUs: `gtx` GTX 1080 Ti 11 GB (7–8 nodes; one node reported a faulty GPU3), `t4` Tesla T4
+  15 GB (2 nodes × 3), `rtx` RTX PRO 4500 Blackwell 32 GB (1 node × 2). 2-hour job limit on
+  all. t4/rtx queues can wait long, so prefer gtx.
+- llama.cpp modules: gtx `llm-r580-llamacpp/2026.10` (loads `llm-r580/2026.09`, Python 3.13;
+  sm_52/61); t4/rtx `llm-r615-llamacpp/2026.11` (CUDA 12.8; sm_75/sm_120). They conflict;
+  r615 leaves the Python selection alone, so t4/rtx jobs also load `python/3.13.15`. Both
+  builds have `--jinja` (default on), `--reasoning-format`, `--alias`. The module notes say
+  Flash Attention off and layer splitting, so every entry sets `flash_attn: false` and the
+  server command passes `--flash-attn off`.
+- Placement and context (recorded per entry as `server.ctx_size`, reported in
+  `meta.json` → `model_config.ctx_size`): 4B and 8B on gtx, 14B on t4, all at 16384. 32B on rtx
+  at 16384. 32768 would need a quantized KV cache, and llama.cpp needs Flash Attention for a
+  quantized V cache, so check the build first; that would be a separate entry. 32B is also
+  the default for C's `llm_reviewer` and D's attacker. rtx jobs get `--mem=40G` (CSCF's 32B example
+  used 40 GiB of system RAM).
+- CSCF verified Qwen3-14B on one T4 and Qwen3-32B on one RTX with `llm-r615-llamacpp`. Their
+  example jobs are at `$LLAMA_CPP_HOME/share/examples/llama-14b-t4.sbatch` and
+  `llama-32b-rtx.sbatch`. `scripts/cook_probe.sh` prints them; the t4/rtx server flags are to
+  be aligned with them once the output is pasted (open question 3).
+- Venv: `.venv` was made under `llm-r580` (Python 3.13.15). `cook_env.sh` uses `.venv-r615`
+  on t4/rtx if it exists, else `.venv`, and fails early if the chosen Python cannot import
+  the harness dependencies. `cook_probe.sh` checks `.venv` under `python/3.13.15`.
+
+**Tinker**
+- The OpenAI-compatible endpoint takes a base-model ID in `model` (`Qwen/Qwen3-8B`);
+  `tinker://` paths are only for trained checkpoints. `TinkerModel` accepts either.
+  `qwen3-8b-tinker` uses `Qwen/Qwen3-8B` (32K context, recorded as `ctx_size: 32768`).
+- Qwen3-32B was retired on Tinker on 2026-06-12, so `qwen3-32b-tinker` is removed. 4B and 14B
+  are not offered.
+- **Price: $0.60 per million sampled tokens for Qwen3-8B.** The pilot's `MAX_TOKENS` cap counts
+  prompt + completion tokens, so it is conservative for sampled-token cost.
+- Tool support in `/chat/completions` is undocumented; `tool_mode: prompt` stays.
+  `scripts/tinker_smoke.py` makes one call (one trivial tool, `max_tokens` 200, ≤ $0.0001) to
+  check it. A human runs it with their key. Not run yet.
+
 ## Open questions
 
-1. IC-1, IC-2 and IC-3 are pending A's review.
+1. IC-2 and IC-3 are pending A's review (IC-1 was approved and is wired).
 2. (closed) Docker mode: untested and not needed, since `netns` works on Colab/A100 and COOK.
-3. COOK: exact GGUF file names under `/nfs/opt/models` (models.yaml guesses
-   `Qwen3-<size>-Q4_K_M.gguf`); where `llama-server` lives (the job uses `$LLAMA_SERVER`, else
-   `llama-server` on PATH) and whether that build has `--jinja` and `--reasoning-format`;
-   whether `--gres=gpu:1` is the right GPU request.
-4. A100: 40 or 80 GB (decides the 32B entry); is `vllm` installed in the venv or a separate env?
-5. Tinker: which `tinker://` sampler paths to use for base Qwen3-8B/32B, whether
-   `/chat/completions` accepts `tools` (if so, switch to `tool_mode: native`), and the token
-   price, to set `MAX_TOKENS`.
+3. COOK, partly answered (see above). Still open: the t4/rtx flags from CSCF's two example
+   jobs (output of `scripts/cook_probe.sh`), and whether `.venv` runs under `python/3.13.15`
+   or a second venv `.venv-r615` is needed. `--gres=gpu:1` is used for all partitions; confirm
+   with the first real run.
+4. A100: 40 or 80 GB (decides the vLLM 32B entry); is `vllm` installed in the venv or a separate env?
+5. Tinker, mostly answered (see above). Still open: whether `/chat/completions` accepts `tools`
+   (run `scripts/tinker_smoke.py`; if it returns structured `tool_calls`, try `tool_mode: native`).

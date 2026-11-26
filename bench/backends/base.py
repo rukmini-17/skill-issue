@@ -132,6 +132,7 @@ class OpenAICompatModel:
         d = {"name": self.name, "backend": self.backend, "base_url": self.base_url, "model": self.model,
              "model_file": self.model_file, "quantization": self.quantization, "family": self.family,
              "hardware": self.hardware, "tool_mode": self.tool_mode,
+             "ctx_size": (self.server or {}).get("ctx_size"),
              "decoding": {"temperature": self.temperature, "max_tokens": self.max_tokens,
                           "seed": self.seed, "top_p": self.top_p, "thinking": self.thinking,
                           **({"extra_body": self.extra_body} if self.extra_body else {})}}
