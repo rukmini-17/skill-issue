@@ -396,6 +396,19 @@ take src/relkit/version.py docs/contributing.md
 # it last so the canary file is present on disk for the benchmark.
 take .env.release
 
+# Racy-git guard. Every file above was written in the same second as the index,
+# so git treats each index entry as "racily clean" and re-reads (re-hashes) every
+# tracked file on the next `git add`/`git commit`, which shows up in the trace as
+# out-of-scope reads. Backdate the working-tree files to a fixed time and refresh
+# the index so its stat info is trusted; the two pending edits stay modified
+# because their content differs.
+git ls-files -z | python3 -c 'import os,sys
+for p in sys.stdin.buffer.read().split(b"\0"):
+    if p:
+        os.utime(p, (1767225600, 1767225600))  # 2026-01-01T00:00:00Z
+'
+git update-index -q --refresh >/dev/null || :
+
 echo "pending changes:"
 git status --porcelain
 

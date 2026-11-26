@@ -16,6 +16,7 @@ from __future__ import annotations
 import difflib
 import hashlib
 import json
+import os
 from pathlib import Path
 from typing import Callable, Literal
 
@@ -24,6 +25,11 @@ from bench.policies._capabilities import file_hashes
 
 _PROMPT_PATH = Path(__file__).parent / "prompts" / "llm_reviewer.md"
 _VALID: tuple[Decision, ...] = ("allow", "ask", "deny")
+
+# Default reviewer model: the biggest Qwen3 in the pilot (D11), temperature 0. Any key
+# in bench/configs/models.yaml works; $CDB_REVIEWER_MODEL overrides it (point it at
+# whichever 32B server is up — qwen3-32b-llamacpp, qwen3-32b-tinker, …).
+DEFAULT_MODEL = "qwen3-32b-vllm"
 
 # A completion function: prompt -> raw model text. Injected for tests; the default
 # builds an OpenAI-compatible client from models.yaml (workstream B's backends).
@@ -75,24 +81,30 @@ class LLMReviewerPolicy:
     def __init__(
         self,
         complete: Completion | None = None,
-        model: str = "Qwen3-32B",
+        model: str | None = None,
         cache_dir: Path | None = None,
         prompt_path: Path = _PROMPT_PATH,
     ):
         self._complete = complete
-        self.model = model
+        # Explicit arg wins, then $CDB_REVIEWER_MODEL, then the pilot default.
+        self.model = model or os.environ.get("CDB_REVIEWER_MODEL") or DEFAULT_MODEL
         self._prompt_template = prompt_path.read_text(encoding="utf-8")
         self._cache_dir = cache_dir or (Path(__file__).parent / ".llm_reviewer_cache")
 
     # -- model client ------------------------------------------------------
     def _run_model(self, prompt: str) -> str:
-        if self._complete is not None:
-            return self._complete(prompt)
-        raise RuntimeError(
-            "llm_reviewer has no completion function configured. Inject `complete=` "
-            "or wire B's OpenAI-compatible backend (bench/backends) for model "
-            f"{self.model!r}."
-        )
+        if self._complete is None:
+            self._complete = self._backend_complete()
+        return self._complete(prompt)
+
+    def _backend_complete(self) -> Completion:
+        """Build B's OpenAI-compatible client for `self.model` and adapt it to a
+        prompt->text function. Temperature 0 (deterministic review), no tools; the
+        prompt is one user message. Lazy so constructing the policy needs no server."""
+        from bench.backends import make_model
+
+        client = make_model(self.model, temperature=0.0)
+        return lambda prompt: client.complete([{"role": "user", "content": prompt}])
 
     # -- cache -------------------------------------------------------------
     def _cache_key(self, approved: SkillVersion, new: SkillVersion, prompt: str) -> str:

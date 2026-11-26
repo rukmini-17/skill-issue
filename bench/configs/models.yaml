@@ -1,0 +1,174 @@
+# Model registry (D11). PROPOSED by workstream B at checkpoint 5; shared config,
+# needs team approval. Read by bench/backends (make_model). $CDB_MODELS points
+# elsewhere if set.
+#
+# Per entry:
+#   backend         vllm | llamacpp | tinker | ollama
+#   base_url        OpenAI-compatible /v1 endpoint. ${VAR:-default} is expanded;
+#                   pilot jobs set CDB_PORT per job so servers on one node don't clash.
+#   model           name sent in requests (vLLM --served-model-name, llama.cpp --alias,
+#                   Tinker: a tinker:// sampler path)
+#   model_file      GGUF path (llamacpp)
+#   quantization    recorded in meta.json. Never compare quantized and full-precision
+#                   results for the same model in one table (D11).
+#   hardware        recorded in meta.json
+#   partition       COOK Slurm partition (pilot sbatch reads it)
+#   candidate       true = in the pilot (Qwen3-4B/8B/14B/32B, D11)
+#   tool_mode       native (server parses tool calls) | prompt (Qwen3 tool format in the prompt)
+#   thinking        null = model default (Qwen3: on); false/true sets enable_thinking
+#   server          settings for the command that starts the server (bench.backends serve-cmd)
+#   api_key_env     environment variable holding the key (never the key itself)
+# Decoding defaults (D11): agent temperature 0.2. C's reviewer and D's attacker
+# override temperature in code (0 and 0.8).
+#
+# UNVERIFIED (check before the pilot): the GGUF file names under /nfs/opt/models,
+# the llama-server binary on COOK, A100 memory (40 or 80 GB) for 32B, Tinker
+# sampler paths and tool support. See bench/harness/NOTES.md, Open questions.
+
+models:
+  # ------------------------------------------------------------ COOK, llama.cpp
+  qwen3-4b-llamacpp:
+    backend: llamacpp
+    candidate: true
+    base_url: http://127.0.0.1:${CDB_PORT:-8080}/v1
+    model: qwen3-4b
+    model_file: ${CDB_MODEL_DIR:-/nfs/opt/models}/Qwen3-4B-Q4_K_M.gguf
+    quantization: Q4_K_M
+    hardware: cook-gtx
+    partition: gtx
+    family: qwen3
+    temperature: 0.2
+    max_tokens: 4096
+    server: {ctx_size: 32768, n_gpu_layers: 99}
+
+  qwen3-8b-llamacpp:
+    backend: llamacpp
+    candidate: true
+    base_url: http://127.0.0.1:${CDB_PORT:-8080}/v1
+    model: qwen3-8b
+    model_file: ${CDB_MODEL_DIR:-/nfs/opt/models}/Qwen3-8B-Q4_K_M.gguf
+    quantization: Q4_K_M
+    hardware: cook-gtx
+    partition: gtx
+    family: qwen3
+    temperature: 0.2
+    max_tokens: 4096
+    server: {ctx_size: 32768, n_gpu_layers: 99}
+
+  qwen3-14b-llamacpp:
+    backend: llamacpp
+    candidate: true
+    base_url: http://127.0.0.1:${CDB_PORT:-8080}/v1
+    model: qwen3-14b
+    model_file: ${CDB_MODEL_DIR:-/nfs/opt/models}/Qwen3-14B-Q4_K_M.gguf
+    quantization: Q4_K_M
+    hardware: cook-t4
+    partition: t4
+    family: qwen3
+    temperature: 0.2
+    max_tokens: 4096
+    server: {ctx_size: 32768, n_gpu_layers: 99}
+
+  qwen3-32b-llamacpp:
+    backend: llamacpp
+    candidate: true
+    base_url: http://127.0.0.1:${CDB_PORT:-8080}/v1
+    model: qwen3-32b
+    model_file: ${CDB_MODEL_DIR:-/nfs/opt/models}/Qwen3-32B-Q4_K_M.gguf
+    quantization: Q4_K_M
+    hardware: cook-rtx
+    partition: rtx
+    family: qwen3
+    temperature: 0.2
+    max_tokens: 4096
+    server: {ctx_size: 32768, n_gpu_layers: 99}
+
+  # ------------------------------------------------------------------ A100, vLLM
+  qwen3-4b-vllm:
+    backend: vllm
+    candidate: true
+    base_url: http://127.0.0.1:${CDB_PORT:-8000}/v1
+    model: Qwen/Qwen3-4B
+    quantization: bf16
+    hardware: a100
+    family: qwen3
+    temperature: 0.2
+    max_tokens: 4096
+    server: {ctx_size: 32768, gpu_memory_utilization: 0.9}
+
+  qwen3-8b-vllm:
+    backend: vllm
+    candidate: true
+    base_url: http://127.0.0.1:${CDB_PORT:-8000}/v1
+    model: Qwen/Qwen3-8B
+    quantization: bf16
+    hardware: a100
+    family: qwen3
+    temperature: 0.2
+    max_tokens: 4096
+    server: {ctx_size: 32768, gpu_memory_utilization: 0.9}
+
+  qwen3-14b-vllm:
+    backend: vllm
+    candidate: true
+    base_url: http://127.0.0.1:${CDB_PORT:-8000}/v1
+    model: Qwen/Qwen3-14B
+    quantization: bf16
+    hardware: a100
+    family: qwen3
+    temperature: 0.2
+    max_tokens: 4096
+    server: {ctx_size: 32768, gpu_memory_utilization: 0.92}
+
+  # bf16 32B (~65 GB weights) needs an 80 GB A100; on a 40 GB card use the AWQ
+  # checkpoint (Qwen/Qwen3-32B-AWQ) and record it as a different quantization.
+  qwen3-32b-vllm:
+    backend: vllm
+    candidate: true
+    base_url: http://127.0.0.1:${CDB_PORT:-8000}/v1
+    model: Qwen/Qwen3-32B
+    quantization: bf16
+    hardware: a100-80gb
+    family: qwen3
+    temperature: 0.2
+    max_tokens: 4096
+    server: {ctx_size: 32768, gpu_memory_utilization: 0.95}
+
+  # ---------------------------------------------------------------------- Tinker
+  # model must be a tinker:// sampler path; set CDB_TINKER_QWEN3_8B /
+  # CDB_TINKER_QWEN3_32B. Not candidates for the pilot by default (credit cap).
+  qwen3-8b-tinker:
+    backend: tinker
+    base_url: https://tinker.thinkingmachines.dev/services/tinker-prod/oai/api/v1
+    model: ${CDB_TINKER_QWEN3_8B}
+    api_key_env: TINKER_API_KEY
+    quantization: tinker-default
+    hardware: tinker
+    family: qwen3
+    tool_mode: prompt
+    temperature: 0.2
+    max_tokens: 4096
+
+  qwen3-32b-tinker:
+    backend: tinker
+    base_url: https://tinker.thinkingmachines.dev/services/tinker-prod/oai/api/v1
+    model: ${CDB_TINKER_QWEN3_32B}
+    api_key_env: TINKER_API_KEY
+    quantization: tinker-default
+    hardware: tinker
+    family: qwen3
+    tool_mode: prompt
+    temperature: 0.2
+    max_tokens: 4096
+
+  # ----------------------------------------------------------- Mac development
+  # Ollama's qwen3:8b is a Q4_K_M GGUF. Not for reported results.
+  qwen3-8b-ollama:
+    backend: ollama
+    base_url: http://127.0.0.1:11434/v1
+    model: qwen3:8b
+    quantization: Q4_K_M
+    hardware: dev
+    family: qwen3
+    temperature: 0.2
+    max_tokens: 4096

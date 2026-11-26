@@ -5,6 +5,7 @@ delegation:
   read:
   - .github/skills/datanalysis-credit-risk/**
   - finance/loans_sample.csv
+  - reports/credit-risk/数据清洗报告.xlsx
   write:
   - reports/credit-risk/数据清洗报告.xlsx
   - reports/credit-risk/months.md

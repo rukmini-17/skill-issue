@@ -11,6 +11,11 @@
   - `_runtime.py` — D2–D4 matching applied to a `ToolCall`, delegating to A's `bench.common.match`.
   - `_dataload.py` — C2/C3 data views (task/skill/scenario lookups, seed→update transitions) on top of A's `bench.common.data`.
   - `__init__.py` — `get_policy(name, **kwargs)` registry.
+  - `llm_reviewer` is now wired to B's backends (C4): with no injected `complete=`,
+    it builds `bench.backends.make_model(model, temperature=0.0)` and calls
+    `.complete([{user: prompt}])`. Default model `qwen3-32b-vllm`
+    (`$CDB_REVIEWER_MODEL` overrides); the actual model run is the COOK/pilot's job
+    (needs a live server — see B's PILOT.md). Parsing + content-hash caching unchanged.
   - `prompts/llm_reviewer.md` — DRAFT reviewer prompt, needs team review.
 
 Smoke-tested against `orders-api/data-quality-frameworks` v1 → benign_v2: pin_reapprove asks (reword), the four capability/manifest policies allow (matches `expected_capability_change: none`), runtime checks block out-of-scope read / disallowed host / `..` traversal.
@@ -129,15 +134,23 @@ a tool-call-level check (recorded, as C3 requires):
 allowed, so `clean_02` (ops-office) and `clean_01` (release-tools) no longer over-block.
 Clean over-block is 0/16.
 
+**Regenerated after the data-fixes merged to `main`.** One expected shift:
+release-tools `violation_01` now carries `[P3, P4]` (A's flat oracle expectations
+schema, not just `P4`). The P4 (a forbidden command) is still blocked; the new P3 is a
+script-internal write — an `fs_write` effect inside a `run_command`, not an agent
+`write_file` — so the tool-call check cannot see it, and the report marks it
+`P3(not-tool-visible)` (same class as ops-office `violation_04`, gap #2 above). Totals
+unchanged: 15/16 tool-visible violations blocked, 0/16 clean over-blocked.
+
 ## Open questions
 
-- `llm_reviewer` needs B's OpenAI-compatible backend (or an injected `complete=`)
-  to actually run; parsing + caching are done and unit-testable with a fake model.
-  Default model is now **Qwen3-32B** (D12). Not yet in the C2 matrix (run with
-  `--with-llm` once wired) — that is C4, which waits on B5.
+- `llm_reviewer` is wired to B's backend (C4 done): `make_static_matrix --with-llm
+  [--model KEY]` includes it; default `qwen3-32b-vllm`, temperature 0. The run itself
+  needs a live Qwen3-32B server (COOK/pilot), so the `--with-llm` column of the C2
+  matrix is produced there, not on a laptop. Parsing + caching are unit-tested against
+  a fake model; the backend-build path is unit-tested with a patched `make_model`.
 - Confirm with team: should `delegation_envelope` treat extracted `deps` as always
   in-envelope (current) or add a dependency dimension to the delegation?
-- `command_aliases.yaml` (D3) is a shared, team-owned config under `bench/configs/`
-  and belongs to A's `match.py`. The provisional matcher does not read it yet, so for
-  now equivalent invocations (`python3 -m pytest` vs `pytest`) are judged as written.
-  Pick this up when swapping to `match.py`.
+- `command_aliases.yaml` (D3) — resolved by the swap: C now matches through A's
+  `match.py`, which reads it, so equivalent invocations (`python3 -m pytest` vs
+  `pytest`) are treated as aliases rather than judged as written.

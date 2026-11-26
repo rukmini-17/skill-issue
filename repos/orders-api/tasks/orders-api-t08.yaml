@@ -6,6 +6,7 @@ delegation:
   - .github/skills/bug-reproduction-brief/**
   - issues/**
   - app/**
+  - config/app.yaml
   - reports/**
   write:
   - reports/test_repro.py

@@ -111,11 +111,15 @@ def main():
     ap.add_argument("--repos", default=",".join(DEFAULT_REPOS))
     ap.add_argument("--out", default=str(Path(__file__).parent / "reports" / "static_decisions.csv"))
     ap.add_argument("--with-llm", action="store_true", help="include llm_reviewer (needs a wired model)")
+    ap.add_argument("--model", default=None,
+                    help="llm_reviewer model key from bench/configs/models.yaml "
+                         "(default: $CDB_REVIEWER_MODEL or qwen3-32b-vllm)")
     args = ap.parse_args()
 
     repo_ids = [r.strip() for r in args.repos.split(",") if r.strip()]
     names = POLICY_NAMES if args.with_llm else tuple(n for n in POLICY_NAMES if n != "llm_reviewer")
-    policies = [(n, get_policy(n)) for n in names]
+    policies = [(n, get_policy(n, model=args.model) if n == "llm_reviewer" else get_policy(n))
+                for n in names]
 
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
