@@ -47,13 +47,14 @@ cdb_start_server() {
   SRV=$!
 }
 
-# cdb_log_buffers LOG: print llama-server's GPU offload and memory lines (model, KV
-# cache and compute buffers, context). CSCF validated only -c 2048; these lines show
-# what 16384 costs. Copy them into NOTES.md ("Memory at 16384") for the first job per
-# partition.
+# cdb_log_buffers LOG [WHEN]: print llama-server's GPU offload and memory lines (model,
+# KV cache and compute buffers, context, the memory breakdown llama.cpp prints at exit).
+# CSCF validated only -c 2048; these lines show what 16384 costs. Copy them into NOTES.md
+# ("Memory at 16384").
 cdb_log_buffers() {
-  echo "----- llama-server memory ($1) -----"
-  grep -E 'offloaded|model buffer size|KV buffer size|compute buffer size|n_ctx|CUDA0.*(total|free)|out of memory' "$1" \
-    | sed 's/^[0-9.]* //' | head -n 40
+  local pat='buffer size|offload|kv_cache|kv self|KV self|n_ctx|memory breakdown|memory_breakdown|CUDA0 \(|MiB|out of memory|failed to allocate'
+  echo "----- llama-server memory (${2:-after start}: $1) -----"
+  grep -Ei "$pat" "$1" | sed 's/^[0-9.]* //' | head -n 60
+  grep -Eqi 'buffer size' "$1" || echo "(no buffer-size lines in the log; run with --verbosity 4, as first_run_t05.sbatch does)"
   echo "-----"
 }

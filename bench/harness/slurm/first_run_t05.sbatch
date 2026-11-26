@@ -33,12 +33,15 @@ export CDB_PORT=$(( 20000 + ${SLURM_JOB_ID:-0} % 20000 ))
 GGUF=$("$PY" -m bench.backends get "$MODEL" model_file)
 [ -f "$GGUF" ] || { echo "model file not found: $GGUF"; exit 2; }
 SERVE=$("$PY" -m bench.backends serve-cmd "$MODEL") || exit 2
+# Jobs 3249-3251 logged no buffer sizes at the default verbosity; CSCF's examples use
+# --verbosity 4 for these lines. First runs only (the pilot keeps the default).
+SERVE="$SERVE --verbosity ${CDB_SERVER_VERBOSITY:-4}"
 echo "job ${SLURM_JOB_ID:-?} node $(hostname) port $CDB_PORT git $(git rev-parse --short HEAD)"
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/dev/null || true
 echo "server: $SERVE"
 SLOG="runs/first_run/logs/llama-server-${SLURM_JOB_ID:-x}.log"
 eval "cdb_start_server \"\$SLOG\" $SERVE"
-trap 'kill $SRV 2>/dev/null; wait $SRV 2>/dev/null' EXIT
+trap 'kill $SRV 2>/dev/null; wait $SRV 2>/dev/null; cdb_log_buffers "$SLOG" exit' EXIT
 
 "$PY" -m bench.backends wait "$MODEL" --timeout 600 || { echo "server not ready; see $SLOG"; cdb_log_buffers "$SLOG"; tail -n 30 "$SLOG"; exit 3; }
 cdb_log_buffers "$SLOG"

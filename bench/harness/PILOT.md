@@ -27,6 +27,7 @@ and writes the notes below. The team picks the models from these tables (D11).
 | tokens/run | prompt + completion tokens over the run |
 | runs with a multi-call turn | runs where some model turn requested more than one tool call (only the first ran) |
 | runs that wrote before reading | runs with a turn that had `write_file` alongside a read/list/request/command whose result the model had not seen |
+| skill loads per task | per task and row: runs that read the task's SKILL.md / runs that passed, plus the tasks whose skill was never loaded |
 | runs with thinking | runs where some turn returned reasoning text (`reasoning_content` or `<think>`) |
 
 Rates are over completed runs, with 95% Wilson intervals. The 3 repeats of a task
@@ -65,6 +66,13 @@ lists the 165 runs, and `.venv/bin/python -m bench.backends serve-cmd <model>` p
    ```
 
    Resubmit the same command to finish runs a shard did not reach (exit code 2 in the log).
+   **Explicit-invocation row** (the prompt starts with `/<skill_id>`; natural is the default):
+   `INVOCATION=explicit sh bench/harness/scripts/cook_submit.sh pilot qwen3-8b-llamacpp`.
+   Its runs go to `runs/pilot/<model>+explicit/`, and the summary shows it as its own row,
+   so skill-load rates can be compared per task. `INVOCATION=explicit` works the same for
+   `pilot_vllm.sh` and `pilot_tinker.sh`; `pilot run --invocation explicit` directly.
+   To see what an agent read (paths, URLs and commands only; no contents):
+   `.venv/bin/python -m bench.harness.inspect_runs runs/pilot/<row> [--task <task_id>]`.
    `bench/harness/slurm/cook_env.sh` does the setup the way CSCF's examples do (`. /etc/profile`,
    `module purge`, gtx `llm-r580-llamacpp/2026.10` or t4/rtx `llm-r615-llamacpp/2026.11` +
    `python/3.13.15`, a `CUDA_VISIBLE_DEVICES` check, `OMP_NUM_THREADS`). It starts llama-server
@@ -80,7 +88,7 @@ lists the 165 runs, and `.venv/bin/python -m bench.backends serve-cmd <model>` p
 `MAX_TOKENS=<cap> bash bench/harness/scripts/pilot_tinker.sh qwen3-8b-tinker`, smoke-tested with
 `TASKS=ops-office-t05 REPEATS=1` first. Qwen3-32B is retired on Tinker; 4B/14B are not offered.
 
-Outputs: `runs/pilot/<model>/<task_id>/r<k>/` (`meta.json`, `trace.jsonl`,
+Outputs: `runs/pilot/<model>[+explicit]/<task_id>/r<k>/` (`meta.json`, `trace.jsonl`,
 `success.json`, `messages.json`, `reasoning.json`, `mock.jsonl`), `runs/pilot/<model>/progress.jsonl`,
 logs in `runs/pilot/logs/`.
 

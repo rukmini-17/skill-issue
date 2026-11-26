@@ -67,8 +67,17 @@ def jobs(tasks: list[Task], repeats: int, shard: tuple[int, int] = (0, 1)) -> li
     return [j for k, j in enumerate(every) if k % n == i]
 
 
+INVOCATIONS = ("natural", "explicit")
+
+
+def row_label(model: str, invocation: str = "natural") -> str:
+    """Directory / table row for one pilot row. Natural (the default) keeps the bare model
+    name; explicit invocation (the prompt starts with ``/<skill_id>``) is its own row."""
+    return model if invocation == "natural" else f"{model}+{invocation}"
+
+
 def run_dir(root: Path, model: str, task: Task, rep: int) -> Path:
-    return root / model / task.task_id / f"r{rep}"
+    return root / model / task.task_id / f"r{rep}"     # model = row_label(...)
 
 
 def read_meta(d: Path) -> dict | None:
@@ -91,10 +100,11 @@ def none_policy() -> StubPolicy:
     return p
 
 
-def make_spec(root: Path, model: str, task: Task, rep: int) -> RunSpec:
-    return RunSpec(run_id=f"pilot-{model}-{task.task_id}-r{rep}", scenario=None, task=task,
+def make_spec(root: Path, model: str, task: Task, rep: int, invocation: str = "natural") -> RunSpec:
+    label = row_label(model, invocation)
+    return RunSpec(run_id=f"pilot-{label}-{task.task_id}-r{rep}", scenario=None, task=task,
                    installed=repo_install_set(REPOS / task.repo_id), policy=none_policy(), model=model,
-                   invocation="natural", mock_override=None, out_dir=run_dir(root, model, task, rep), seed=rep)
+                   invocation=invocation, mock_override=None, out_dir=run_dir(root, label, task, rep), seed=rep)
 
 
 def tokens_used(root: Path, model: str) -> int:
@@ -112,17 +122,18 @@ def tokens_used(root: Path, model: str) -> int:
 
 def cmd_run(a) -> int:
     t_start = time.monotonic()
+    label = row_label(a.model, a.invocation)
     tasks = all_tasks()
     if a.tasks:
         want = set(a.tasks.split(","))
         tasks = [t for t in tasks if t.task_id in want or t.repo_id in want]
     shard = tuple(int(x) for x in a.shard.split("/"))
     todo = jobs(tasks, a.repeats, (shard[0], shard[1]))
-    pending = [(t, r) for t, r in todo if not is_complete(run_dir(a.out, a.model, t, r), a.retry_agent_errors)]
-    print(f"pilot {a.model}: shard {a.shard}, {len(todo)} runs in shard, {len(pending)} to do", file=sys.stderr)
+    pending = [(t, r) for t, r in todo if not is_complete(run_dir(a.out, label, t, r), a.retry_agent_errors)]
+    print(f"pilot {label}: shard {a.shard}, {len(todo)} runs in shard, {len(pending)} to do", file=sys.stderr)
     if a.dry_run:
         for t, r in pending:
-            print(f"{t.task_id} r{r} -> {run_dir(a.out, a.model, t, r)}")
+            print(f"{t.task_id} r{r} -> {run_dir(a.out, label, t, r)}")
         return 0
     if not pending:
         return 0
@@ -134,23 +145,23 @@ def cmd_run(a) -> int:
         return 3
 
     harness = Harness(isolation=a.isolation, run_timeout=a.run_timeout)
-    progress = a.out / a.model / "progress.jsonl"
+    progress = a.out / label / "progress.jsonl"
     progress.parent.mkdir(parents=True, exist_ok=True)
     stop_reason = None
 
     def can_start() -> str | None:
         if a.deadline_s and time.monotonic() - t_start > a.deadline_s - a.run_timeout - 120:
             return "deadline"
-        if a.max_total_tokens and tokens_used(a.out, a.model) >= a.max_total_tokens:
+        if a.max_total_tokens and tokens_used(a.out, label) >= a.max_total_tokens:
             return "token_budget"
         return None
 
     def one(t: Task, r: int) -> dict:
         t0 = time.monotonic()
-        spec = make_spec(a.out, a.model, t, r)
+        spec = make_spec(a.out, a.model, t, r, a.invocation)
         harness.run(spec)
         meta = read_meta(spec.out_dir) or {}
-        rec = {"task_id": t.task_id, "repeat": r, "shard": a.shard, "seconds": round(time.monotonic() - t0, 1),
+        rec = {"task_id": t.task_id, "repeat": r, "invocation": a.invocation, "shard": a.shard, "seconds": round(time.monotonic() - t0, 1),
                "run_end": meta.get("run_end"), "success": (meta.get("success") or {}).get("success"),
                "agent_error_kind": meta.get("agent_error_kind"), "harness_error": meta.get("harness_error"),
                "time": time.strftime("%Y-%m-%dT%H:%M:%S")}
@@ -174,8 +185,8 @@ def cmd_run(a) -> int:
             done, running = cf.wait(running, return_when=cf.FIRST_COMPLETED)
             for f in done:
                 f.result()
-    left = sum(not is_complete(run_dir(a.out, a.model, t, r), a.retry_agent_errors) for t, r in todo)
-    print(f"pilot {a.model}: shard {a.shard} finished; {left} runs left"
+    left = sum(not is_complete(run_dir(a.out, label, t, r), a.retry_agent_errors) for t, r in todo)
+    print(f"pilot {label}: shard {a.shard} finished; {left} runs left"
           + (f" (stopped: {stop_reason})" if stop_reason else ""), file=sys.stderr)
     return 0 if left == 0 else 2
 
@@ -210,6 +221,7 @@ def collect(root: Path) -> list[dict]:
         rows.append({
             "model": meta_p.parents[2].name, "backend": mc.get("backend"), "quantization": mc.get("quantization"),
             "hardware": mc.get("hardware"), "repo_id": m.get("repo_id"), "task_id": m.get("task_id"),
+            "invocation": m.get("invocation"), "skill_id": m.get("skill_id"),
             "repeat": int(d.name[1:]), "complete": "success" in m and not m.get("harness_error"),
             "success": (m.get("success") or {}).get("success"), "oracle": oracle,
             "skill_loaded": (m.get("skill_id") in (m.get("skill_loads") or [])) if m.get("skill_id") else None,
@@ -274,12 +286,32 @@ def summarize(rows: list[dict], expected_per_model: int | None = None) -> dict[s
         beh.append(f"| {model} | {len(sub)} | {_rate(flags, 'multi')[0]} | {_rate(flags, 'blind')[0]} | "
                    + (f"{statistics.mean(r['multi_call_turns'] for r in sub):.2f}" if sub else "-")
                    + f" | {_rate(flags, 'thinks')[0]} | {_rate(sub, 'skill_loaded')[0]} |")
+    labels = sorted(by_model)
+    per_task = ["| task | skill | " + " | ".join(f"{m}: skill loads / success" for m in labels) + " |",
+                "|---|---|" + "---|" * len(labels)]
+    never = []
+    for tid in sorted({r["task_id"] for r in rows if r["task_id"]}):
+        cells, skill, total_loads, total = [], "", 0, 0
+        for m in labels:
+            sub = [r for r in by_model[m] if r["task_id"] == tid and r["complete"]]
+            skill = skill or next((r["skill_id"] for r in sub if r["skill_id"]), "")
+            loads = sum(bool(r["skill_loaded"]) for r in sub)
+            ok = sum(r["success"] is True for r in sub)
+            total_loads, total = total_loads + loads, total + len(sub)
+            cells.append(f"{loads}/{len(sub)} / {ok}/{len(sub)}" if sub else "-")
+        if total and not total_loads:
+            never.append(tid)
+        per_task.append(f"| {tid} | {skill} | " + " | ".join(cells) + " |")
+    per_task.append("")
+    per_task.append(f"Tasks whose skill was never loaded in any completed run ({len(never)}): "
+                    + (", ".join(never) if never else "none"))
     errs = ["| model | error kind | runs |", "|---|---|---|"]
     for model, rs in sorted(by_model.items()):
         for kind, n in sorted(Counter(r["error_kind"] or r["run_end"] for r in rs
                                       if r["run_end"] in ("error", "harness_error")).items()):
             errs.append(f"| {model} | {kind} | {n} |")
     return {"main": "\n".join(lines), "per_repo": "\n".join(per_repo), "behaviour": "\n".join(beh),
+            "per_task": "\n".join(per_task),
             "errors": "\n".join(errs)}
 
 
@@ -290,7 +322,10 @@ def render(tables: dict[str, str]) -> str:
             f"#### Per model\n\n{tables['main']}\n\n#### Per model and repo\n\n{tables['per_repo']}\n\n"
             "#### Behaviour\n\n'Wrote before reading': a turn with `write_file` alongside a read, "
             "list, request or command whose result the model had not seen yet.\n\n"
-            f"{tables['behaviour']}\n\n#### Errors\n\n{tables['errors']}\n")
+            f"{tables['behaviour']}\n\n#### Skill loads per task\n\nEach cell: runs that read the task's "
+            "SKILL.md / runs that passed the success check, over completed runs. A `+explicit` row "
+            "used explicit invocation.\n\n"
+            f"{tables['per_task']}\n\n#### Errors\n\n{tables['errors']}\n")
 
 
 def cmd_summarize(a) -> int:
@@ -324,6 +359,9 @@ def main(argv: list[str] | None = None) -> int:
     r = sub.add_parser("run")
     r.add_argument("--model", required=True)
     r.add_argument("--repeats", type=int, default=REPEATS)
+    r.add_argument("--invocation", choices=INVOCATIONS, default="natural",
+                   help="natural (default): the task prompt as written; explicit: prompt starts with "
+                        "/<skill_id> and runs go to <model>+explicit/")
     r.add_argument("--tasks", default="", help="comma-separated task ids or repo ids (default: all 55)")
     r.add_argument("--shard", default="0/1", help="i/n")
     r.add_argument("--workers", type=int, default=1, help="parallel runs (vLLM batches; llama.cpp: keep 1)")

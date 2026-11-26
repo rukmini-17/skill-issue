@@ -17,6 +17,8 @@
 # The array has 8 shards (8 Slurm jobs). Runs are resumable: resubmitting the
 # same command only runs what is missing (killed jobs, the 2-hour limit).
 # Override shards with --array=0-3 AND SHARDS=4 together.
+# Explicit-invocation row (prompt starts with /<skill_id>; runs go to <model>+explicit/):
+#   INVOCATION=explicit sh bench/harness/scripts/cook_submit.sh pilot qwen3-8b-llamacpp
 #SBATCH --job-name=cdb-pilot
 #SBATCH --partition=gtx
 #SBATCH --gres=gpu:1
@@ -48,14 +50,14 @@ nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/dev/null || tr
 echo "server: $SERVE"
 SLOG="runs/pilot/logs/llama-server-${SLURM_JOB_ID:-x}_${SHARD}.log"
 eval "cdb_start_server \"\$SLOG\" $SERVE"
-trap 'kill $SRV 2>/dev/null; wait $SRV 2>/dev/null' EXIT
+trap 'kill $SRV 2>/dev/null; wait $SRV 2>/dev/null; cdb_log_buffers "$SLOG" exit' EXIT
 
 "$PY" -m bench.backends wait "$MODEL" --timeout 900 || { echo "server not ready; see $SLOG"; cdb_log_buffers "$SLOG"; tail -n 30 "$SLOG"; exit 3; }
 cdb_log_buffers "$SLOG"
 
 ELAPSED=$(( $(date +%s) - START ))
-"$PY" -m bench.harness.pilot run --model "$MODEL" --shard "$SHARD/$SHARDS" --workers 1 \
-    --deadline-s $(( LIMIT_S - ELAPSED - 300 )) --no-wait
+"$PY" -m bench.harness.pilot run --model "$MODEL" --invocation "${INVOCATION:-natural}" \
+    --shard "$SHARD/$SHARDS" --workers 1 --deadline-s $(( LIMIT_S - ELAPSED - 300 )) --no-wait
 RC=$?
 echo "pilot exit $RC (0 = shard complete, 2 = runs left; resubmit to resume)"
 exit $RC

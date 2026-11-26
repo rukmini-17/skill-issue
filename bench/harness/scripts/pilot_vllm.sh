@@ -27,7 +27,8 @@ for MODEL in "$@"; do
     SRV=$!
   fi
   if "$PY" -m bench.backends wait "$MODEL" --timeout 1800; then
-    "$PY" -m bench.harness.pilot run --model "$MODEL" --workers "$WORKERS" --no-wait \
+    "$PY" -m bench.harness.pilot run --model "$MODEL" --invocation "${INVOCATION:-natural}" \
+      --workers "$WORKERS" --no-wait \
       2>&1 | tee -a "runs/pilot/logs/pilot-$MODEL.log"
     r=${PIPESTATUS[0]}; [ "$r" = 0 ] || rc=$r
   else

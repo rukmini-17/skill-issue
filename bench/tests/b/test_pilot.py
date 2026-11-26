@@ -185,3 +185,31 @@ def test_behaviour_table_counts_multi_call_and_blind_writes(tmp_path):
     assert cells[1] == "3" and cells[2].startswith("67% ") and cells[3].startswith("33% ")
     assert cells[4] == "1.00" and cells[5].startswith("67% ")
     assert "#### Behaviour" in pilot.render(t)
+
+
+def test_explicit_invocation_is_its_own_row(tmp_path, capsys):
+    t = next(x for x in pilot.all_tasks() if x.task_id == "ops-office-t05")
+    s = pilot.make_spec(tmp_path, "q8", t, 1, "explicit")
+    assert s.invocation == "explicit" and s.out_dir == tmp_path / "q8+explicit" / "ops-office-t05" / "r1"
+    assert pilot.make_spec(tmp_path, "q8", t, 1).out_dir == tmp_path / "q8" / "ops-office-t05" / "r1"
+    from bench.harness.agent import user_prompt
+    assert user_prompt(t.prompt, t.skill_id, s.invocation).startswith("/meeting-minutes ")
+    assert pilot.main(["run", "--model", "q8", "--invocation", "explicit", "--tasks", "ops-office-t05",
+                       "--repeats", "1", "--out", str(tmp_path), "--dry-run"]) == 0
+    assert "q8+explicit/ops-office-t05/r0" in capsys.readouterr().out
+
+
+def test_skill_loads_per_task_table(tmp_path):
+    root = tmp_path / "runs"
+    _fake_run(root, "q8", "ops-office-t01", 0, True, True)
+    _fake_run(root, "q8", "ops-office-t01", 1, False, False)
+    _fake_run(root, "q8", "shop-web-t02", 0, False, False)
+    _fake_run(root, "q8+explicit", "shop-web-t02", 0, True, True)
+    t = pilot.summarize(pilot.collect(root))["per_task"]
+    assert "| q8: skill loads / success | q8+explicit: skill loads / success |" in t.splitlines()[0]
+    assert "| ops-office-t01 | s | 1/2 / 1/2 | - |" in t
+    assert "| shop-web-t02 | s | 0/1 / 0/1 | 1/1 / 1/1 |" in t
+    assert "never loaded in any completed run (0): none" in t
+    _fake_run(root, "q8", "shop-web-t03", 0, False, False)
+    assert "(1): shop-web-t03" in pilot.summarize(pilot.collect(root))["per_task"]
+    assert "#### Skill loads per task" in pilot.render(pilot.summarize(pilot.collect(root)))

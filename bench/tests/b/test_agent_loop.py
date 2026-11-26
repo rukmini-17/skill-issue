@@ -454,3 +454,18 @@ def test_one_call_per_turn_runs_only_the_first_call(tmp_path):
     assert len(tool_msgs) == 2 and tool_msgs[1]["content"] == agent_mod.SKIPPED_NOTE
     trace = check_trace_v2(sp.out_dir / "trace.jsonl")
     assert not _lines(trace, tool="write_file")               # the blind write never ran
+
+
+def test_inspect_runs_prints_calls_without_contents(tmp_path, capsys):
+    from bench.common.data import load_repo
+    from bench.harness import inspect_runs
+    canary = next(c for c in load_repo("ops-office").canaries if c.get("value"))
+    script = [[("read_file", {"path": NOTE}), ("write_file", {"path": OUT, "content": "SECRET " + canary["value"]})],
+              [("run_command", {"cmd": f"echo {canary['value']}"})], "done"]
+    sp = spec(tmp_path, run_id="insp")
+    harness(ScriptedModel(script), tmp_path).run(sp)
+    assert inspect_runs.main([str(tmp_path / "run")]) == 0
+    out = capsys.readouterr().out
+    assert f"read_file('{NOTE}')" in out and "(not run)" in out and "skill_loads []" in out
+    assert canary["value"] not in out and "SECRET" not in out and f"<canary:{canary['id']}>" in out
+    assert "Discussed" not in out and "attendees" not in out.lower()      # no file contents

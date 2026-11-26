@@ -16,7 +16,7 @@ MODEL="${1:?usage: $0 MODEL}"
 : "${TINKER_API_KEY:?set TINKER_API_KEY}"
 [ "$("$PY" -m bench.backends get "$MODEL" backend)" = tinker ] || { echo "$MODEL is not a tinker model"; exit 2; }
 mkdir -p runs/pilot/logs
-"$PY" -m bench.harness.pilot run --model "$MODEL" --workers "${WORKERS:-2}" \
+"$PY" -m bench.harness.pilot run --model "$MODEL" --invocation "${INVOCATION:-natural}" --workers "${WORKERS:-2}" \
   --repeats "${REPEATS:-3}" ${TASKS:+--tasks "$TASKS"} --max-total-tokens "$MAX_TOKENS" --no-wait \
   2>&1 | tee -a "runs/pilot/logs/pilot-$MODEL.log"
 exit "${PIPESTATUS[0]}"
