@@ -21,10 +21,12 @@ and never printed; error texts are redacted.
 ``--pilot-request`` sends instead the harness's real first request for a task (system prompt
 with the repo's skill list, the explicit-v2 task prompt, all five tool schemas, setup d9's
 max_tokens 8192, seed 0 as for r0) and prints the server's full error body. If it is
-rejected, it sends variants with one field removed (``bench.harness.request_probe``; all at
-max_tokens 16) and stops at the first that is accepted: that field is the culprit.
-Rejected requests cost nothing; an accepted one about $0.002. Hard cap ``--max-cost-usd``
-(default $0.02):
+rejected, it sends variants with one change each (``bench.harness.request_probe``; all at
+max_tokens 1024) and stops at the first that is accepted *with a tool call*: that change is
+the fix. A variant accepted without a tool call (cut off while thinking) is inconclusive, not
+a fix. A 422 can also reject the model's *response* (job 3444: "model made multiple tool calls
+when parallel_tool_calls=false"); the probe says so. Rejected requests cost nothing; an
+accepted variant about $0.003. Hard cap ``--max-cost-usd`` (default $0.02):
 
     .venv/bin/python bench/harness/scripts/tinker_smoke.py --model qwen3.6-35b-a3b-tinker --pilot-request
         [--task ops-office-t05] [--invocation explicit] [--setup d9] [--seed 0] [--all]
@@ -111,6 +113,19 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
+def verdict(out: dict) -> str:
+    """works: accepted and the model made a tool call. no_tool_call: accepted, but cut off or
+    answered without a call, so it shows nothing about the rejection (not a fix).
+    response_rejected: the server rejected what the model generated (several tool calls under
+    parallel_tool_calls=false). rejected: any other error."""
+    if out.get("accepted"):
+        return "works" if out.get("tool_calls") else "no_tool_call"
+    body = (out.get("body") or "") + (out.get("error") or "")
+    if "multiple tool calls" in body.lower():
+        return "response_rejected"
+    return "rejected"
+
+
 def _send(m, kw: dict) -> dict:
     """One raw request; the outcome without prompt texts. Never retried."""
     from bench.backends.base import classify
@@ -145,17 +160,20 @@ def probe(entry: str, overrides: dict, a) -> int:
             continue
         out = _send(m, v)
         spent += out.get("cost_usd") or 0.0
+        out["verdict"] = verdict(out)
         print(f"-- {name}: " + json.dumps(out, indent=1, default=str))
-        if out["accepted"]:
+        if out["verdict"] == "works":
             if name == "exact":
-                print("exact pilot request ACCEPTED: the 422 did not reproduce (check model, task, seed)")
+                print("exact pilot request ACCEPTED with a tool call: the error did not reproduce")
                 break
             found = found or name
             if not a.all:
                 break
     print(f"\nspent about ${spent:.4f}")
     if found:
-        print(f"first accepted variant: '{found}' -> that change makes the request valid")
+        print(f"first variant that works (accepted, with a tool call): '{found}' -> that change is the fix")
+    else:
+        print("no variant both was accepted and made a tool call (no_tool_call variants are not fixes)")
     return 0
 
 

@@ -13,6 +13,7 @@ import pytest
 from bench.backends import BackendError, load_models, make_model
 from bench.backends.base import Budget, cost_usd
 from bench.harness import pilot
+from bench.harness.request_probe import GET_TIME
 
 from b_fake_openai import Err, FakeOpenAI, tool_call, write_models
 
@@ -98,6 +99,11 @@ def test_tinker_entries():
         assert c["server"]["ctx_size"] == ctx and c["price"]["sample"] == sample and c["price"]["prefill"] > 0
         m = make_model(name, env={"TINKER_API_KEY": "x"})
         assert m.tool_mode == "native" and m.describe()["price"] == c["price"]
+        # job 3444: Tinker 422s a multi-call response under parallel_tool_calls=false -> never sent
+        assert c["send_parallel_tool_calls"] is False
+        assert "parallel_tool_calls" not in m.build_request([{"role": "user", "content": "x"}], GET_TIME)
+        dec = m.describe()["decoding"]
+        assert dec["send_parallel_tool_calls"] is False and dec["parallel_tool_calls"] is None
     py_compile.compile(str(ROOT / "bench/harness/scripts/tinker_smoke.py"), doraise=True)
     smoke = (ROOT / "bench/harness/scripts/tinker_smoke.py").read_text()
     assert "--model" in smoke and "build_request" in smoke and "print(key" not in smoke
@@ -148,13 +154,13 @@ def test_pilot_request_is_the_harness_first_request_and_variants_change_one_thin
     assert user["content"].startswith("Use the meeting-minutes skill (.github/skills/meeting-minutes/SKILL.md)")
     assert first_messages("ops-office-t05", "natural")[1]["content"] == load_task_prompt("ops-office-t05")
     vs = dict(variants(kw))
-    for name in ("exact", "max_tokens=16", "no seed", "no parallel_tool_calls", "no tool_choice",
+    for name in ("exact", "max_tokens=1024", "no seed", "no parallel_tool_calls", "no tool_choice",
                  "no temperature", "no tool http_request", "http_request without headers",
                  "no additionalProperties in schemas", "short system prompt", "no system message",
                  "smoke tool only (get_time)"):
         assert name in vs, name
-    assert vs["exact"] is kw and vs["max_tokens=16"]["max_tokens"] == 16
-    assert "seed" not in vs["no seed"] and vs["no seed"]["max_tokens"] == 16 and kw["seed"] == 0
+    assert vs["exact"] is kw and vs["max_tokens=1024"]["max_tokens"] == 1024
+    assert "seed" not in vs["no seed"] and vs["no seed"]["max_tokens"] == 1024 and kw["seed"] == 0
     assert "additionalProperties" not in json.dumps(vs["no additionalProperties in schemas"]["tools"])
     assert len(vs["no tool run_command"]["tools"]) == 4
     assert shape(kw)["tools"] == [t["function"]["name"] for t in TOOL_SCHEMAS]
@@ -189,8 +195,66 @@ def test_smoke_pilot_request_finds_the_rejected_field(tmp_path, monkeypatch, cap
         assert smoke.main(["--model", "tk", "--pilot-request", "--dump", str(dump)]) == 0
         sent = list(srv.requests)
     out = capsys.readouterr().out
-    assert "Extra inputs are not permitted" in out and "first accepted variant: 'no seed'" in out
-    assert len(sent) == 3 and sent[0]["max_tokens"] == 8192 and sent[1]["max_tokens"] == 16
+    assert "Extra inputs are not permitted" in out and "first variant that works" in out and "'no seed'" in out
+    assert len(sent) == 3 and sent[0]["max_tokens"] == 8192 and sent[1]["max_tokens"] == 1024
     assert "seed" not in sent[2] and len(sent[0]["tools"]) == 5
     assert "tk-secret-xyz" not in out and "tk-secret-xyz" not in dump.read_text()
     assert json.loads(dump.read_text())["seed"] == 0
+
+
+MULTI_422 = '{"detail": "model made multiple tool calls when parallel_tool_calls=false. Set parallel_tool_calls=true"}'
+
+
+def _load_smoke():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("tinker_smoke", ROOT / "bench/harness/scripts/tinker_smoke.py")
+    smoke = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(smoke)
+    return smoke
+
+
+def test_smoke_probe_job_3444_response_rejection(tmp_path, monkeypatch, capsys):
+    """Job 3444: the server 422s the model's multi-call reply under parallel_tool_calls=false.
+    The probe calls that a response rejection and finds 'no parallel_tool_calls' as the fix."""
+    smoke = _load_smoke()
+
+    def reply(req):
+        if req.get("parallel_tool_calls") is False:
+            return Err(422, body=MULTI_422)
+        return {"role": "assistant", "content": None,
+                "tool_calls": [tool_call("list_dir", {"path": "."}), tool_call("read_file", {"path": "a"}, "c2")]}
+
+    with FakeOpenAI([reply] * 20) as srv:
+        write_models(tmp_path / "m.yaml", srv.base_url, backend="tinker", name="tk", api_key_env="TK_KEY",
+                     model="Qwen/Qwen3.6-35B-A3B", tool_mode="native",
+                     price={"prefill": 0.54, "cached_prefill": 0.108, "sample": 1.335})
+        monkeypatch.setenv("CDB_MODELS", str(tmp_path / "m.yaml"))
+        monkeypatch.setenv("TK_KEY", "k")
+        assert smoke.main(["--model", "tk", "--pilot-request"]) == 0
+    out = capsys.readouterr().out
+    assert '"verdict": "response_rejected"' in out
+    assert "first variant that works" in out and "'no parallel_tool_calls'" in out
+
+
+def test_smoke_verdicts_do_not_call_a_tool_less_reply_a_fix():
+    smoke = _load_smoke()
+    assert smoke.verdict({"accepted": True, "tool_calls": [], "finish_reason": "length"}) == "no_tool_call"
+    assert smoke.verdict({"accepted": True, "tool_calls": ["list_dir"]}) == "works"
+    assert smoke.verdict({"accepted": False, "body": MULTI_422}) == "response_rejected"
+    assert smoke.verdict({"accepted": False, "body": BODY_422}) == "rejected"
+
+
+def test_tinker_runs_record_that_parallel_tool_calls_is_not_sent(tmp_path, monkeypatch):
+    out = tmp_path / "p"
+    replies = [{"role": "assistant", "content": None,
+                "tool_calls": [tool_call("list_dir", {"path": "."}), tool_call("list_dir", {"path": "a"}, "c2")]},
+               {"role": "assistant", "content": "done"}]
+    with FakeOpenAI(replies) as srv:
+        write_models(tmp_path / "m.yaml", srv.base_url, name="f", send_parallel_tool_calls=False)
+        monkeypatch.setenv("CDB_MODELS", str(tmp_path / "m.yaml"))
+        pilot.main(["run", "--model", "f", "--tasks", "ops-office-t05", "--repeats", "1",
+                    "--isolation", "env", "--out", str(out), "--no-wait"])
+        assert all("parallel_tool_calls" not in r for r in srv.requests)
+    meta = json.loads((out / "f+d9/ops-office-t05/r0/meta.json").read_text())
+    assert meta["model_config"]["decoding"]["send_parallel_tool_calls"] is False
+    assert meta["one_call_per_turn"] is True and meta["behaviour"]["skipped_calls"] == 1   # decision 6 (b)

@@ -20,6 +20,9 @@
 #   parallel_tool_calls  default false (team decision 6): sent with native tool calls so the
 #                   server returns at most one call where it honours the field; null omits
 #                   it for a server that rejects it. The harness runs one call per turn anyway.
+#   send_parallel_tool_calls  default true; false = never send parallel_tool_calls (Tinker:
+#                   it rejects a response with several tool calls under parallel_tool_calls=false
+#                   with HTTP 422, job 3444). Recorded in meta.json model_config.decoding.
 #   server          settings for the command that starts the server (bench.backends serve-cmd).
 #                   server.ctx_size is the context window; it is recorded in meta.json
 #                   (model_config.ctx_size) because it affects results. Tinker: the
@@ -192,6 +195,7 @@ models:
     hardware: tinker
     family: qwen3
     tool_mode: native
+    send_parallel_tool_calls: false     # Tinker 422s a multi-call response under false (job 3444)
     temperature: 0.2
     max_tokens: 4096
     price: {prefill: 0.195, cached_prefill: 0.039, sample: 0.60}
@@ -208,6 +212,7 @@ models:
     hardware: tinker
     family: qwen3
     tool_mode: native
+    send_parallel_tool_calls: false     # Tinker 422s a multi-call response under false (job 3444)
     temperature: 0.2
     max_tokens: 4096
     price: {prefill: 0.54, cached_prefill: 0.108, sample: 1.335}
@@ -223,6 +228,7 @@ models:
     hardware: tinker
     family: qwen3
     tool_mode: native
+    send_parallel_tool_calls: false     # Tinker 422s a multi-call response under false (job 3444)
     temperature: 0.2
     max_tokens: 4096
     price: {prefill: 0.6975, cached_prefill: 0.1395, sample: 5.595}

@@ -9,8 +9,10 @@ needs each SKILL.md's frontmatter, read from the repo's skill snapshot.
 
 ``variants(kw)`` yields ``(name, request)`` pairs:
 * ``exact``: the request as the harness sends it;
-* ``max_tokens=16``: the same with a tiny budget (also makes every later variant cheap);
-* then, on top of ``max_tokens=16``, one change each: drop ``seed`` / ``parallel_tool_calls`` /
+* ``max_tokens=1024``: the same with the smoke test's budget, enough for a thinking model to
+  reach a tool call, and cheap (a 16-token budget only proves the request parses: the reply
+  is cut off before any tool call, so it cannot show a response-side rejection);
+* then, on top of ``max_tokens=1024``, one change each: drop ``seed`` / ``parallel_tool_calls`` /
   ``tool_choice`` / ``temperature`` / ``top_p`` / ``extra_body`` (and each key of it), drop one
   tool, drop ``http_request.headers``, strip ``additionalProperties`` from all schemas, a short
   system prompt, no system message, and the smoke test's single ``get_time`` tool.
@@ -30,6 +32,7 @@ from bench.harness.run import REPOS
 from bench.harness.skills import repo_install_set
 from bench.harness.tools import TOOL_SCHEMAS
 
+VARIANT_MAX_TOKENS = 1024
 GET_TIME = [{"type": "function", "function": {
     "name": "get_time", "description": "Return the current UTC time.",
     "parameters": {"type": "object", "properties": {}, "required": []}}}]
@@ -72,8 +75,8 @@ def _strip_additional(obj):
 def variants(kw: dict[str, Any]) -> Iterator[tuple[str, dict[str, Any]]]:
     yield "exact", kw
     small = copy.deepcopy(kw)
-    small["max_tokens"] = 16
-    yield "max_tokens=16", small
+    small["max_tokens"] = VARIANT_MAX_TOKENS
+    yield f"max_tokens={VARIANT_MAX_TOKENS}", small
 
     def drop(field):
         k = copy.deepcopy(small)

@@ -492,9 +492,18 @@ Checkpoint 4 (reference replay) is a joint A+B step and was skipped for now.
   - It stops at the first accepted variant. Rejected requests cost nothing; the exact
     request could cost up to $0.012 if it is accepted, and each variant about $0.001. Hard
     cap $0.02.
-- **Suspects**, from what differs from the smoke request: `seed`, which the pilot sends
-  (the repeat number) and the smoke test did not; max_tokens 8192; the `headers` object with
-  `additionalProperties`; the long system prompt.
+- **Result (`--pilot-request`, run by a human):** the exact request got HTTP 422
+  `{"detail":"model made multiple tool calls when parallel_tool_calls=false. ..."}`.
+  - **The request was valid; the model's reply was rejected.** The first pilot turn tends to
+    ask for several calls at once, which the one-tool smoke prompt never did.
+  - `max_tokens=16` was "accepted" only because the reply was cut off before any tool call: a
+    false positive.
+- **Fix:** Tinker entries set `send_parallel_tool_calls: false` (see "Team decision 6"), and
+  one call per turn stays enforced by the harness.
+- **Probe fix:** variants now use max_tokens 1024, so the model can reach a tool call. A
+  variant counts as the fix only if it is accepted *and* makes a tool call (`works`). An
+  accepted reply without a call is `no_tool_call`, which is inconclusive. A 422 about
+  multiple tool calls is reported as `response_rejected`.
 
 ## COOK and Tinker facts (2026-11-25)
 
@@ -1040,11 +1049,18 @@ as the read it depended on:
   counted in `meta.json` → `behaviour.skipped_calls`. Default `Harness(one_call_per_turn=True)`;
   `run_agent` defaults to it too. Debugging only: `Harness(one_call_per_turn=False)` /
   `run_task --all-calls-per-turn`. The pilot runner and D's runner use the default.
-- **(a) `parallel_tool_calls: false` is sent** with native tool calls (client setting
-  `parallel_tool_calls`, default false; models.yaml `parallel_tool_calls: null` omits it for
-  a server that rejects the field). Prompt mode (Tinker) sends no `tools`, so nothing is sent.
-- Recorded in `meta.json`: `one_call_per_turn`, and `model_config.decoding.parallel_tool_calls`
-  (None in prompt mode). The behaviour table still counts multi-call turns: under (b) they show
+- **(a) `parallel_tool_calls: false` is sent where it is honoured**, with native tool calls
+  (client setting `parallel_tool_calls`, default false; models.yaml `parallel_tool_calls: null`
+  omits it for a server that rejects the field).
+  - **Not for Tinker (2026-11-26, job 3444).** Under `parallel_tool_calls=false`, Tinker does
+    not limit the reply to one call. It *rejects the reply* when the model makes several:
+    HTTP 422 `{"detail":"model made multiple tool calls when parallel_tool_calls=false. ..."}`.
+    So the field turns a harmless multi-call turn into a failed run.
+  - The per-model flag `send_parallel_tool_calls: false` (models.yaml) never sends the field.
+    It is set on all three Tinker entries. (b) still applies: the harness runs the first call
+    and answers the others with `SKIPPED_NOTE`.
+- Recorded in `meta.json`: `one_call_per_turn`, `model_config.decoding.parallel_tool_calls`
+  (the value sent, None when not sent) and `model_config.decoding.send_parallel_tool_calls`. The behaviour table still counts multi-call turns: under (b) they show
   how often the model asked for more than one call, not how many ran.
 - Tests: `test_one_call_per_turn_runs_only_the_first_call`,
   `test_default_one_call_per_turn_through_backend`, `test_parallel_tool_calls_setting`.

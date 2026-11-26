@@ -166,7 +166,7 @@ class OpenAICompatModel:
                  seed: int | None = None, timeout: float = 600.0, retries: int = 3,
                  retry_backoff: float = 2.0, tool_mode: str | None = None,
                  thinking: bool | None = None, top_p: float | None = None,
-                 parallel_tool_calls: bool | None = False,
+                 parallel_tool_calls: bool | None = False, send_parallel_tool_calls: bool = True,
                  extra_body: dict | None = None, model_file: str | None = None,
                  quantization: str | None = None, server: dict | None = None,
                  hardware: str | None = None, backend: str | None = None,
@@ -190,6 +190,11 @@ class OpenAICompatModel:
         # only; null in models.yaml omits it for a server that rejects the field). The harness
         # enforces one call per turn either way.
         self.parallel_tool_calls = parallel_tool_calls
+        # Per model: False = never send the field (Tinker, job 3444: with
+        # parallel_tool_calls=false it rejects a *response* that has several tool calls with
+        # HTTP 422, so the field breaks runs instead of limiting calls). One call per turn is
+        # still enforced by the harness (decision 6 (b)).
+        self.send_parallel_tool_calls = bool(send_parallel_tool_calls)
         self.top_p = top_p
         self.extra_body = dict(extra_body or {})
         self.model_file = model_file
@@ -216,7 +221,8 @@ class OpenAICompatModel:
              "ctx_size": (self.server or {}).get("ctx_size"),
              "decoding": {"temperature": self.temperature, "max_tokens": self.max_tokens,
                           "seed": self.seed, "top_p": self.top_p, "thinking": self.thinking,
-                          "parallel_tool_calls": self.parallel_tool_calls if self.tool_mode == "native" else None,
+                          "parallel_tool_calls": self.parallel_tool_calls if self._sends_parallel() else None,
+                          "send_parallel_tool_calls": self.send_parallel_tool_calls,
                           **({"extra_body": self.extra_body} if self.extra_body else {})}}
         info = self.server_info()
         if info:
@@ -280,6 +286,12 @@ class OpenAICompatModel:
 
     # --------------------------------------------------------------- chat
 
+    def _sends_parallel(self) -> bool:
+        """Is ``parallel_tool_calls`` in the request? Native tool mode only, not null, and the
+        entry's ``send_parallel_tool_calls`` (default true)."""
+        return (self.tool_mode == "native" and self.parallel_tool_calls is not None
+                and self.send_parallel_tool_calls)
+
     def backend_extra_body(self) -> dict:
         """Backend-specific request fields (``chat_template_kwargs`` and the like)."""
         return {}
@@ -288,7 +300,7 @@ class OpenAICompatModel:
         kw: dict[str, Any] = dict(model=self.model, temperature=self.temperature, max_tokens=self.max_tokens)
         if tools and self.tool_mode == "native":
             kw.update(messages=messages, tools=tools, tool_choice="auto")
-            if self.parallel_tool_calls is not None:
+            if self._sends_parallel():
                 kw["parallel_tool_calls"] = self.parallel_tool_calls
         elif tools:
             kw["messages"] = hermes.to_prompt_messages(messages, tools)
