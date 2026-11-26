@@ -51,7 +51,7 @@ cdb_log_buffers "$SLOG"
 echo "server ready after $(( $(date +%s) - START )) s"
 
 ELAPSED=$(( $(date +%s) - START ))
-"$PY" -m bench.harness.pilot run --model "$MODEL" --invocation "$INVOCATION" --tasks "$TASKS" \
+"$PY" -m bench.harness.pilot run --model "$MODEL" --invocation "$INVOCATION" --setup "${SETUP:-d9}" --tasks "$TASKS" \
     --repeats 1 --workers 1 --isolation netns --run-timeout "$RUN_TIMEOUT" \
     --deadline-s $(( LIMIT_S - ELAPSED - 300 )) --no-wait --out "$OUT"
 RC=$?

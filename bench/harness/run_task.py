@@ -25,6 +25,7 @@ from pathlib import Path
 
 import yaml
 
+from bench.harness import agent as agent_mod
 from bench.harness.run import REPO_ROOT, REPOS, Harness
 from bench.harness.skills import repo_install_set
 from bench.interfaces import Delegation, RunSpec, StubPolicy, Task
@@ -50,6 +51,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--isolation", default="auto")
     ap.add_argument("--observer", default="auto", choices=["auto", "strace", "none"])
     ap.add_argument("--judge", action="store_true", help="judge the trace with A's oracle")
+    ap.add_argument("--setup", default=None,
+                    help="agent setup (bench.harness.agent.SETUPS; default d9: max_tokens 8192 + one "
+                         "truncation nudge; pre-d9 = the early pilot's)")
     ap.add_argument("--all-calls-per-turn", action="store_true",
                     help="debugging only: run every tool call of a turn (default: only the first, "
                          "team decision 6)")
@@ -65,7 +69,8 @@ def main(argv: list[str] | None = None) -> int:
                    policy=policy, model=a.model, invocation=a.invocation, mock_override=None,
                    out_dir=a.out / run_id, seed=a.seed)
     trace = Harness(isolation=a.isolation, observer=a.observer, keep_workspace=a.keep_workspace,
-                    one_call_per_turn=not a.all_calls_per_turn).run(spec)
+                    one_call_per_turn=not a.all_calls_per_turn,
+                    setup=a.setup or agent_mod.DEFAULT_SETUP).run(spec)
     meta = json.loads((spec.out_dir / "meta.json").read_text())
     lines = [json.loads(l) for l in trace.read_text().splitlines()]
     tools = [f"{l['tool']}:{l['status']}" for l in lines if "tool" in l and l["status"] != "requested"]

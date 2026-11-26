@@ -103,6 +103,11 @@ lists the 165 runs, and `.venv/bin/python -m bench.backends serve-cmd <model>` p
    ```
 
    Resubmit the same command to finish runs a shard did not reach (exit code 2 in the log).
+   **Agent setup** (team decision 9): new rows use `SETUP=d9` by default, which means
+   max_tokens 8192 and one nudge after a truncated turn with no tool call. A second such turn
+   ends the run as `truncated`. Their row labels end in `+d9`. To resume an early-pilot row
+   (max_tokens 4096, no nudge) unchanged, use `SETUP=pre-d9`. `RUN_TIMEOUT=<s>` sets the
+   per-run budget (default 1800).
    **Explicit-invocation row** (team decision 8: the user prompt is "Use the <skill_id> skill
    (.github/skills/<skill_id>/SKILL.md) for this task." then a blank line and the task prompt;
    natural is the default):
@@ -124,6 +129,26 @@ lists the 165 runs, and `.venv/bin/python -m bench.backends serve-cmd <model>` p
    with context 16384; decoding is ours (temperature 0.2), not the examples' sampling flags.
    Prefer gtx; t4/rtx queues can wait.
 
+4. **14B confirmation pilot** (prepared 2026-11-26, not yet submitted). Row
+   `qwen3-14b-llamacpp+explicit-v2+d9`: explicit-v2 invocation, setup d9, 55 tasks × 3 = 165
+   runs on t4. The array has 10 shards of 16–17 runs (10 Slurm jobs), at most 6 at a time
+   (t4 has 6 GPUs on 2 nodes). Each run is capped at 20 min (runs took 2–6 min in the skill
+   check):
+
+   ```sh
+   .venv/bin/python -m bench.harness.pilot run --model qwen3-14b-llamacpp --invocation explicit \
+       --shard 0/10 --dry-run                                  # expect 17 runs, row ...+explicit-v2+d9
+   INVOCATION=explicit RUN_TIMEOUT=1200 SHARDS=10 \
+     sh bench/harness/scripts/cook_submit.sh pilot qwen3-14b-llamacpp --array=0-9%6
+   squeue -u $USER
+   .venv/bin/python -m bench.harness.pilot report --model qwen3-14b-llamacpp --timing
+   ```
+
+   A shard runs for about 88 min of its 2 h limit. That covers 16.5 runs at the skill-check
+   mean of 4.4 min; at 6 min per run about 2 runs per shard are left over, and resubmitting
+   the same command runs only those. Expect about 3 h of wall time in two waves, and about
+   15 GPU-hours. Sizing details are in NOTES.md, "14B confirmation pilot".
+
 **A100 (vLLM, bf16).** `bash bench/harness/scripts/pilot_vllm.sh qwen3-8b-vllm` (`WORKERS=4` by default).
 
 **Tinker (Qwen/Qwen3-8B, $0.60 per million sampled tokens).** First the one-call check:
@@ -131,9 +156,55 @@ lists the 165 runs, and `.venv/bin/python -m bench.backends serve-cmd <model>` p
 `MAX_TOKENS=<cap> bash bench/harness/scripts/pilot_tinker.sh qwen3-8b-tinker`, smoke-tested with
 `TASKS=ops-office-t05 REPEATS=1` first. Qwen3-32B is retired on Tinker; 4B/14B are not offered.
 
-Outputs: `runs/pilot/<model>[+explicit-v2]/<task_id>/r<k>/` (`meta.json`, `trace.jsonl`,
-`success.json`, `messages.json`, `reasoning.json`, `mock.jsonl`), `runs/pilot/<model>/progress.jsonl`,
-logs in `runs/pilot/logs/`.
+Outputs: `runs/pilot/<model>[+explicit-v2][+d9]/<task_id>/r<k>/` (`meta.json`, `trace.jsonl`,
+`success.json`, `messages.json`, `reasoning.json`, `mock.jsonl`, and from decision 9 on
+`final_delta.tar.gz` / `final_delta.json`, the files the run created, changed or deleted, kept
+for re-scoring). `runs/pilot/<row>/progress.jsonl`, logs in `runs/pilot/logs/`.
+
+## Manual audit (20 failed + 20 passed runs per row)
+
+This tests whether the success checks agree with what the prompt asked for, before A changes
+any check and before success rates are reported. Do it once per primary row: the 14B
+confirmation row, and the 8B explicit row now if useful.
+
+1. **Sample.** The sample is reproducible with the same seed. It takes complete runs only
+   (`run_end=error` is excluded) and spreads them over repos and tasks:
+
+   ```sh
+   .venv/bin/python -m bench.harness.pilot audit-sample --root runs/pilot \
+       --model qwen3-14b-llamacpp --fail 20 --pass 20 --seed 0 --out runs/audit/14b-d9.csv
+   ```
+2. **Read the task, not the check.** For each CSV row, open the task prompt
+   (`repos/<repo>/tasks/<task_id>.yaml`). Then:
+   `.venv/bin/python -m bench.harness.inspect_runs <run> --check --show-write <check path>`.
+   It prints the steps, the check's result and output tail, and the agent's last write to the
+   checked file, with canaries masked. For files written by commands, look in
+   `final_delta.tar.gz` on disk. Don't paste file contents into chat or logs (rule 12).
+3. **Fill in the CSV.**
+   - `audit_task_done`: `yes`, `partial` or `no`, judged by the prompt's literal requirements.
+   - `audit_category`, one of:
+     - `ok`: the check agrees with the auditor;
+     - `format_only`: the check failed, but the task was done and only the format differs;
+     - `partial`;
+     - `wrong`;
+     - `model_error`: e.g. wrong expected values, a missing import;
+     - `infra`: server, timeout or sandbox;
+     - `check_bug`: the check passed but the task is not done, or the check is broken.
+   - `auditor` and `notes`.
+4. **Double-audit 10** of the 40 (5 failed, 5 passed) by a second person, and report the
+   agreement on `audit_task_done`.
+5. **Report** in Results:
+   - false-fail rate = `format_only` / 20 failed;
+   - false-pass rate = `check_bug` / 20 passed;
+   - the tasks behind each.
+6. **Act:**
+   - Any `format_only` failure on a task in `proposed_checks.yaml` supports that proposal.
+     A `format_only` failure on a task that has no proposal goes to A as a new one.
+   - Any `check_bug` goes to A for review.
+   - The two "template wording" proposals (release-tools-t05, t07/t08) need audit evidence
+     before A adopts them.
+   - Re-score after A's change:
+     `.venv/bin/python -m bench.harness.rescore --root runs/pilot --checks <new checks> --flips`.
 
 ## Results
 
@@ -198,15 +269,33 @@ with thinking (`meta.json` → `behaviour`).
 
 ## Notes for the model choice
 
-_To write after the runs: failure modes seen in traces (tool-call format, skill not
-loaded, step limit, context overflow), anything that differs between the A100 and
-COOK rows for Qwen3-8B, and per-run wall time to size the sweeps._
+Plan (2026-11-26, Rukmini for B; team to confirm). Justification is in NOTES.md, "Primary
+agent model plan".
+- **Qwen3-14B on t4 is the primary agent.** It loads skills where 32B does, and t4 has 6 GPUs.
+- **Qwen3-32B on rtx is secondary**, on a subset of tasks.
+- **Qwen3-8B on gtx is the low-skill-load baseline.** It reads SKILL.md in 0/96 natural and
+  4/96 explicit runs.
+- **Qwen3-32B stays the attacker and llm_reviewer model.**
+
+Wall time per run, for sizing sweeps:
+
+| model, partition | mean per run | per step |
+|---|---|---|
+| 8B, gtx | 133–210 s | — |
+| 14B, t4 | 261 s (n = 5) | 45 s |
+| 32B, rtx | 148 s (n = 5) | 29 s |
+
+Failure modes seen so far:
+- the skill is not loaded (know-how skills);
+- the model's own errors (wrong expected values, imports that don't exist);
+- turns truncated at 4096 tokens (decision 9);
+- hung or slow nodes in one gtx array.
 
 ## Decision (team)
 
 | | |
 |---|---|
-| models chosen | |
-| repeats | |
-| per-run budget (steps, seconds) | |
-| decided on | |
+| models chosen | 14B (t4) primary, 32B (rtx) subset, 8B (gtx) baseline; 32B attacker and reviewer (proposed, to confirm) |
+| repeats | 3 (confirmation pilot) |
+| per-run budget (steps, seconds) | 25 steps; 1200 s (14B confirmation pilot), max_tokens 8192 + one truncation nudge (decision 9) |
+| decided on | 2026-11-26 (Rukmini for B); team confirmation pending |

@@ -19,6 +19,10 @@
 # Override shards with --array=0-3 AND SHARDS=4 together.
 # Explicit-invocation row (team decision 8 wording; runs go to <model>+explicit-v2/):
 #   INVOCATION=explicit sh bench/harness/scripts/cook_submit.sh pilot qwen3-8b-llamacpp
+# 14B confirmation row (explicit-v2 + decision 9) on t4, 10 shards, at most 6 at once
+# (t4 has 6 GPUs on 2 nodes); see PILOT.md "14B confirmation pilot":
+#   INVOCATION=explicit RUN_TIMEOUT=1200 SHARDS=10 \
+#     sh bench/harness/scripts/cook_submit.sh pilot qwen3-14b-llamacpp --array=0-9%6
 # Rerun runs whose model server failed (run_end=error), on top of the missing ones:
 #   RETRY_AGENT_ERRORS=1 sh bench/harness/scripts/cook_submit.sh pilot qwen3-8b-llamacpp
 #SBATCH --job-name=cdb-pilot
@@ -64,7 +68,11 @@ ELAPSED=$(( $(date +%s) - START ))
 # RETRY_AGENT_ERRORS=1 also reruns runs that ended run_end=error (model server failed);
 # by default they count as complete. Or move them aside first: pilot set-aside --dry-run.
 RETRY=""; [ "${RETRY_AGENT_ERRORS:-0}" = 1 ] && RETRY="--retry-agent-errors"
+# SETUP: agent setup, default d9 (decision 9: max_tokens 8192 + truncation nudge; rows get +d9).
+# SETUP=pre-d9 resumes an early-pilot row (max_tokens 4096, no nudge) unchanged.
+# RUN_TIMEOUT: seconds per run (default 1800); a shard starts no run it cannot finish.
 "$PY" -m bench.harness.pilot run --model "$MODEL" --invocation "${INVOCATION:-natural}" $RETRY \
+    --setup "${SETUP:-d9}" --run-timeout "${RUN_TIMEOUT:-1800}" \
     --shard "$SHARD/$SHARDS" --workers 1 --deadline-s $(( LIMIT_S - ELAPSED - 300 )) --no-wait
 RC=$?
 echo "pilot exit $RC (0 = shard complete, 2 = runs left; resubmit to resume)"

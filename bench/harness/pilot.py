@@ -36,6 +36,7 @@ from pathlib import Path
 
 import yaml
 
+from bench.harness.agent import DEFAULT_SETUP, SETUPS
 from bench.harness.run import REPO_ROOT, REPOS, Harness
 from bench.harness.skills import repo_install_set
 from bench.interfaces import Delegation, RunSpec, StubPolicy, Task
@@ -72,15 +73,19 @@ def jobs(tasks: list[Task], repeats: int, shard: tuple[int, int] = (0, 1)) -> li
 INVOCATIONS = ("natural", "explicit")
 
 
-def row_label(model: str, invocation: str = "natural") -> str:
-    """Directory / table row for one pilot row. Natural (the default) keeps the bare model
-    name. Explicit invocation (decision 8 wording, ``agent.EXPLICIT_PREFIX``) is its own row,
-    ``<model>+explicit-v2``. Rows named ``<model>+explicit`` hold the earlier
-    ``/<skill_id>`` form and are not resumed into the new row."""
-    if invocation == "natural":
-        return model
-    from bench.harness.agent import EXPLICIT_FORM
-    return f"{model}+{invocation}-{EXPLICIT_FORM}"
+def row_label(model: str, invocation: str = "natural", setup: str | None = None) -> str:
+    """Directory / table row for one pilot row: model, invocation and agent setup.
+
+    * natural keeps the bare model name; explicit invocation (decision 8 wording,
+      ``agent.EXPLICIT_PREFIX``) adds ``+explicit-v2``. Rows named ``<model>+explicit`` hold
+      the earlier ``/<skill_id>`` form and are not resumed into the new row.
+    * setup (``agent.SETUPS``, default ``d9``) adds ``+d9``. ``pre-d9`` (the early pilot:
+      max_tokens 4096, no truncation nudge) adds nothing, so those rows resume as they were.
+    """
+    from bench.harness.agent import DEFAULT_SETUP, EXPLICIT_FORM
+    setup = setup or DEFAULT_SETUP
+    label = model if invocation == "natural" else f"{model}+{invocation}-{EXPLICIT_FORM}"
+    return label if setup == "pre-d9" else f"{label}+{setup}"
 
 
 def run_dir(root: Path, model: str, task: Task, rep: int) -> Path:
@@ -107,8 +112,9 @@ def none_policy() -> StubPolicy:
     return p
 
 
-def make_spec(root: Path, model: str, task: Task, rep: int, invocation: str = "natural") -> RunSpec:
-    label = row_label(model, invocation)
+def make_spec(root: Path, model: str, task: Task, rep: int, invocation: str = "natural",
+              setup: str | None = None) -> RunSpec:
+    label = row_label(model, invocation, setup)
     return RunSpec(run_id=f"pilot-{label}-{task.task_id}-r{rep}", scenario=None, task=task,
                    installed=repo_install_set(REPOS / task.repo_id), policy=none_policy(), model=model,
                    invocation=invocation, mock_override=None, out_dir=run_dir(root, label, task, rep), seed=rep)
@@ -129,7 +135,7 @@ def tokens_used(root: Path, model: str) -> int:
 
 def cmd_run(a) -> int:
     t_start = time.monotonic()
-    label = row_label(a.model, a.invocation)
+    label = row_label(a.model, a.invocation, a.setup)
     tasks = all_tasks()
     if a.tasks:
         want = set(a.tasks.split(","))
@@ -151,7 +157,7 @@ def cmd_run(a) -> int:
         print(f"pilot: model server for {a.model} not ready at {m.health_url()}", file=sys.stderr)
         return 3
 
-    harness = Harness(isolation=a.isolation, run_timeout=a.run_timeout)
+    harness = Harness(isolation=a.isolation, run_timeout=a.run_timeout, setup=a.setup)
     progress = a.out / label / "progress.jsonl"
     progress.parent.mkdir(parents=True, exist_ok=True)
     stop_reason = None
@@ -165,7 +171,7 @@ def cmd_run(a) -> int:
 
     def one(t: Task, r: int) -> dict:
         t0 = time.monotonic()
-        spec = make_spec(a.out, a.model, t, r, a.invocation)
+        spec = make_spec(a.out, a.model, t, r, a.invocation, a.setup)
         harness.run(spec)
         meta = read_meta(spec.out_dir) or {}
         rec = {"task_id": t.task_id, "repeat": r, "invocation": a.invocation, "shard": a.shard, "seconds": round(time.monotonic() - t0, 1),
@@ -231,6 +237,7 @@ def collect(root: Path) -> list[dict]:
             "hardware": mc.get("hardware"), "repo_id": m.get("repo_id"), "task_id": m.get("task_id"),
             "invocation": m.get("invocation"), "skill_id": m.get("skill_id"),
             "repeat": int(d.name[1:]), "complete": "success" in m and not m.get("harness_error"),
+            "run_dir": str(d),
             "success": (m.get("success") or {}).get("success"), "oracle": oracle,
             "skill_loaded": (m.get("skill_id") in (m.get("skill_loads") or [])) if m.get("skill_id") else None,
             # any read/list/exec under the target skill's folder (None before meta had skill_uses)
@@ -450,6 +457,62 @@ def cmd_set_aside(a) -> int:
     return 0
 
 
+AUDIT_COLUMNS = ["run", "row", "task_id", "repeat", "check_type", "check_success", "run_end",
+                 "audit_task_done", "audit_category", "auditor", "notes"]
+AUDIT_CATEGORIES = ("ok", "format_only", "partial", "wrong", "model_error", "infra", "check_bug")
+
+
+def audit_sample(rows: list[dict], n_fail: int, n_pass: int, seed: int = 0) -> list[dict]:
+    """``n_fail`` failed + ``n_pass`` passed completed runs (run_end not ``error``), spread over
+    repos and tasks: shuffle with ``seed``, then take round-robin by repo, one task at a time."""
+    import random
+    rng = random.Random(seed)
+    out = []
+    for want, n in ((False, n_fail), (True, n_pass)):
+        pool = [r for r in rows if r["complete"] and r["run_end"] != "error" and (r["success"] is True) == want]
+        rng.shuffle(pool)
+        by_repo: dict[str, list[dict]] = defaultdict(list)
+        for r in pool:
+            by_repo[r["repo_id"]].append(r)
+        for v in by_repo.values():          # interleave tasks: each task's 1st run, then 2nd, ...
+            rng.shuffle(v)
+            rank: Counter = Counter()
+            keyed = []
+            for r in v:
+                rank[r["task_id"]] += 1
+                keyed.append((rank[r["task_id"]], r))
+            v[:] = [r for _, r in sorted(keyed, key=lambda x: x[0])]
+        picked: list[dict] = []
+        while len(picked) < n and any(by_repo.values()):
+            for repo in sorted(by_repo):
+                if by_repo[repo] and len(picked) < n:
+                    picked.append(by_repo[repo].pop(0))
+        out += picked
+    return out
+
+
+def cmd_audit_sample(a) -> int:
+    rows = _report_rows(a)
+    picked = audit_sample(rows, a.fail, a.passed, a.seed)
+    buf = io.StringIO()
+    w = csv.DictWriter(buf, fieldnames=AUDIT_COLUMNS)
+    w.writeheader()
+    for r in picked:
+        meta = read_meta(Path(r["run_dir"])) or {}
+        w.writerow({"run": r["run_dir"], "row": r["model"], "task_id": r["task_id"], "repeat": r["repeat"],
+                    "check_type": (meta.get("success") or {}).get("type"), "check_success": r["success"],
+                    "run_end": r["run_end"], "audit_task_done": "", "audit_category": "", "auditor": "",
+                    "notes": ""})
+    if a.out:
+        a.out.parent.mkdir(parents=True, exist_ok=True)
+        a.out.write_text(buf.getvalue())
+        print(f"{len(picked)} runs ({sum(r['success'] is not True for r in picked)} failed, "
+              f"{sum(r['success'] is True for r in picked)} passed) -> {a.out}")
+    else:
+        print(buf.getvalue(), end="")
+    return 0
+
+
 def cmd_summarize(a) -> int:
     rows = collect(a.root)
     if a.csv:
@@ -485,6 +548,9 @@ def main(argv: list[str] | None = None) -> int:
                    help="natural (default): the task prompt as written; explicit: prompt starts with "
                         "'Use the <skill_id> skill (.github/skills/<skill_id>/SKILL.md) for this task.' "
                         "and runs go to <model>+explicit-v2/")
+    r.add_argument("--setup", choices=sorted(SETUPS), default=DEFAULT_SETUP,
+                   help="agent setup (default d9: max_tokens 8192 + one truncation nudge; rows get +d9). "
+                        "pre-d9 = the early pilot's setup, to resume those rows")
     r.add_argument("--tasks", default="", help="comma-separated task ids or repo ids (default: all 55)")
     r.add_argument("--shard", default="0/1", help="i/n")
     r.add_argument("--workers", type=int, default=1, help="parallel runs (vLLM batches; llama.cpp: keep 1)")
@@ -518,7 +584,18 @@ def main(argv: list[str] | None = None) -> int:
     sa.add_argument("--run-end", default="error", help="comma-separated run_end values (default: error)")
     sa.add_argument("--model", default="", help="only this model's rows (natural and explicit)")
     sa.add_argument("--dry-run", action="store_true")
+    au = sub.add_parser("audit-sample", help="pick failed + passed runs for the manual audit (CSV)")
+    au.add_argument("--root", type=Path, action="append")
+    au.add_argument("--model", default="")
+    au.add_argument("--tasks", default="")
+    au.add_argument("--fail", type=int, default=20)
+    au.add_argument("--pass", dest="passed", type=int, default=20)
+    au.add_argument("--seed", type=int, default=0)
+    au.add_argument("--out", type=Path, help="CSV to write (default: print)")
     a = ap.parse_args(argv)
+    if a.cmd == "audit-sample":
+        a.common_tasks = False
+        return cmd_audit_sample(a)
     if a.cmd == "set-aside":
         return cmd_set_aside(a)
     if a.cmd == "report":

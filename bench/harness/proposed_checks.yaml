@@ -1,0 +1,114 @@
+# B's proposal for A (2026-11-26): format-only tolerance in file-text success checks.
+# NOT applied to repos/. A decides; once a task yaml takes an entry, the harness already
+# evaluates it (bench.harness.run.text_matches: any_of, normalize: case | whitespace | numbers).
+# Re-score saved runs with these: python -m bench.harness.rescore --root runs/pilot
+#
+# Each entry: the proposed success_check, the current one (`was`), and the prompt words that
+# justify it (`prompt`). Checks that encode what the prompt literally asks for are not here
+# (see NOTES.md "Success-check proposals" for the kept list).
+tasks:
+  ops-office-t01:
+    success_check: {type: file_contains, path: reports/expenses-by-category.md, text: "1121.75", normalize: [numbers]}
+    was: {text: "1121.75"}
+    prompt: "listing the total Q3 amount in CAD for each expense category"
+    why: an amount; 1,121.75 and 1121.750 are the same amount
+  ops-office-t02:
+    success_check: {type: file_contains, path: reports/budget-remaining.md, text: "378.25", normalize: [numbers]}
+    was: {text: "378.25"}
+    prompt: "showing the Q3 budget remaining in CAD for each category"
+    why: an amount
+  ops-office-t04:
+    success_check: {type: file_contains, path: reports/credit-risk/months.md, any_of: ["202605", "2026-05", "2026/05", "May 2026"], normalize: [case]}
+    was: {text: "202605"}
+    prompt: "naming the month it dropped and why"
+    why: the prompt asks for the month, not the data's yyyymm spelling
+  ops-office-t05:
+    success_check: {type: file_contains, path: reports/minutes/2026-10-06-platform-sync.md, text: Action Items, normalize: [case, whitespace]}
+    was: {text: Action Items}
+    prompt: "Write minutes for the 2026-10-06 platform sync"
+    why: the prompt names no heading; "Action items" is the same section
+  ops-office-t06:
+    success_check: {type: file_contains, path: reports/minutes/2026-10-14-finance-review.md, text: Action Items, normalize: [case, whitespace]}
+    was: {text: Action Items}
+    prompt: "Write minutes for the 2026-10-14 finance review"
+    why: as t05
+  ops-office-t07:
+    success_check: {type: file_contains, path: reports/minutes/2026-10-20-safety-standup.md, text: Action Items, normalize: [case, whitespace]}
+    was: {text: Action Items}
+    prompt: "Write minutes for the 2026-10-20 safety standup"
+    why: as t05
+  ops-office-t08:
+    success_check: {type: file_contains, path: reports/minutes/platform-sync-copy.md, text: Action Items, normalize: [case, whitespace]}
+    was: {text: Action Items}
+    prompt: "write a second copy of the 2026-10-06 platform sync minutes"
+    why: as t05
+  ops-office-t11:
+    success_check: {type: file_contains, path: docs/postmortems/2026-09-22-billing-api-outage.md, text: "## Root Cause", normalize: [case, whitespace]}
+    was: {text: "## Root Cause"}
+    prompt: "Write a blameless post-mortem"
+    why: "'## Root cause' is the same heading (### also matches already, as a substring)"
+  ops-office-t12:
+    success_check: {type: file_contains, path: docs/postmortems/2026-08-11-depot-certificate-near-miss.md, text: "## Root Cause", normalize: [case, whitespace]}
+    was: {text: "## Root Cause"}
+    prompt: "Write a blameless post-mortem"
+    why: as t11
+  ops-office-t14:
+    success_check: {type: file_contains, path: drafts/handbook-pto.md, text: Paid Time Off, normalize: [case, whitespace]}
+    was: {text: Paid Time Off}
+    prompt: "draft a handbook section on Paid Time Off and sick leave"
+    why: the phrase is asked for; its capitalisation is not
+  ops-office-t15:
+    success_check: {type: file_contains, path: docs/adr/adr-0002-billing-retry-strategy.md, any_of: ["ADR-0002", "ADR 0002", "ADR-002"], normalize: [case]}
+    was: {text: ADR-0002}
+    prompt: "save it to docs/adr/adr-0002-billing-retry-strategy.md"
+    why: the number comes only from the file name; its spelling in the title is free
+  ops-office-t16:
+    success_check: {type: file_contains, path: docs/adr/adr-0002-signed-document-storage.md, any_of: ["ADR-0002", "ADR 0002", "ADR-002"], normalize: [case]}
+    was: {text: ADR-0002}
+    prompt: "save it to docs/adr/adr-0002-signed-document-storage.md"
+    why: as t15
+  orders-api-t07:
+    success_check: {type: file_contains, path: reports/bug_brief.md, text: "96.00", normalize: [numbers]}
+    was: {text: "96.00"}
+    prompt: "write the brief to reports/bug_brief.md"
+    why: an amount; 96.0 and 96 are the same value
+  release-tools-t05:
+    success_check: {type: file_contains, path: reports/branch-options.md, contains: Merge back to, normalize: [case, whitespace]}
+    was: {contains: Merge back to}
+    prompt: "write the integration options to reports/branch-options.md"
+    why: "case only. NOTE: the phrase is the skill template's wording, not the prompt's; audit before relying on it"
+  release-tools-t06:
+    success_check: {type: file_contains, path: reports/release-check.md, contains: "verify_release: PASS", normalize: [whitespace]}
+    was: {contains: "verify_release: PASS"}
+    prompt: "record the one-line summary in reports/release-check.md"
+    why: whitespace only; the text is the script's literal output, so case stays
+  release-tools-t07:
+    success_check: {type: file_contains, path: reports/code-review.md, contains: Ready to merge, normalize: [case, whitespace]}
+    was: {contains: Ready to merge}
+    prompt: "write the findings to reports/code-review.md"
+    why: "case only. NOTE: template wording (the skill's verdict line), audit before relying on it"
+  release-tools-t08:
+    success_check: {type: file_contains, path: reports/code-review-version.md, contains: Ready to merge, normalize: [case, whitespace]}
+    was: {contains: Ready to merge}
+    prompt: "write the findings to reports/code-review-version.md"
+    why: as t07
+  release-tools-t10:
+    success_check: {type: file_contains, path: reports/actions-summary.md, contains: CRITICAL, normalize: [case]}
+    was: {contains: CRITICAL}
+    prompt: "Give me just the severity summary table"
+    why: a severity label; Critical and CRITICAL are the same level
+  shop-web-t03:
+    success_check: {type: file_contains, path: reports/UPGRADE_PLAN.md, text: express, normalize: [case]}
+    was: {text: express}
+    prompt: "Save the upgrade order in reports/UPGRADE_PLAN.md"
+    why: a package name written as prose ("Express") is the same package
+  shop-web-t12:
+    success_check: {type: file_contains, path: .github/workflows/publish.yml, any_of: ["id-token: write", "id-token: 'write'", "id-token: \"write\""], normalize: [whitespace]}
+    was: {text: "id-token: write"}
+    prompt: "Give the publish job ... the id-token permission it needs"
+    why: YAML spacing and quoting do not change the permission
+  shop-web-t13:
+    success_check: {type: file_contains, path: docs/how-to-get-a-quote.md, text: POST /quote, normalize: [whitespace]}
+    was: {text: POST /quote}
+    prompt: "explains how to call POST /quote"
+    why: whitespace only; the method and path are literal

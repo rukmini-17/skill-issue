@@ -30,7 +30,7 @@ def test_policy_and_spec(tmp_path):
     t = pilot.all_tasks()[0]
     s = pilot.make_spec(tmp_path, "m", t, 2)
     assert s.policy.name == "none" and s.scenario is None and s.seed == 2 and s.invocation == "natural"
-    assert s.out_dir == tmp_path / "m" / t.task_id / "r2" and set(s.installed) and \
+    assert s.out_dir == tmp_path / "m+d9" / t.task_id / "r2" and set(s.installed) and \
         all(v.version == "v1" for v in s.installed.values())
 
 
@@ -58,24 +58,24 @@ def test_run_resume_and_summary(tmp_path, monkeypatch):
         assert pilot.main(args) == 0                                   # resume: nothing left
         assert len(srv.requests) == n_req
     for r in (0, 1):
-        m = json.loads((out / "fake-vllm/ops-office-t05" / f"r{r}" / "meta.json").read_text())
+        m = json.loads((out / "fake-vllm+d9/ops-office-t05" / f"r{r}" / "meta.json").read_text())
         assert m["seed"] == r and m["policy_runtime"] == "none" and m["skill_id"] == "meeting-minutes"
         assert m["run_end"] == "done" and m["success"]["success"] is False
-    prog = [json.loads(l) for l in (out / "fake-vllm/progress.jsonl").read_text().splitlines()]
+    prog = [json.loads(l) for l in (out / "fake-vllm+d9/progress.jsonl").read_text().splitlines()]
     assert [(p["task_id"], p["repeat"]) for p in prog] == [("ops-office-t05", 0), ("ops-office-t05", 1)]
     assert srv.requests[0]["seed"] == 0 and srv.requests[2]["seed"] == 1
 
     # a killed run (no success entry) is redone; others are kept
-    meta_p = out / "fake-vllm/ops-office-t05/r1/meta.json"
+    meta_p = out / "fake-vllm+d9/ops-office-t05/r1/meta.json"
     m = json.loads(meta_p.read_text())
     m.pop("success")
     meta_p.write_text(json.dumps(m))
-    assert not pilot.is_complete(meta_p.parent) and pilot.is_complete(out / "fake-vllm/ops-office-t05/r0")
+    assert not pilot.is_complete(meta_p.parent) and pilot.is_complete(out / "fake-vllm+d9/ops-office-t05/r0")
 
     rows = pilot.collect(out)
     assert len(rows) == 2 and rows[0]["backend"] == "vllm" and rows[0]["skill_loaded"] is False
     tables = pilot.summarize(rows)
-    assert "| fake-vllm | vllm | bf16 |" in tables["main"] and "n/a" in tables["main"]
+    assert "| fake-vllm+d9 | vllm | bf16 |" in tables["main"] and "n/a" in tables["main"]
 
 
 def test_server_not_ready_fails_fast(tmp_path, monkeypatch):
@@ -98,8 +98,8 @@ def test_deadline_and_token_budget_stop_new_runs(tmp_path, monkeypatch):
         assert srv.requests == []
         # each fake run uses 2 x 120 tokens; a cap of 100 allows the first run only
         assert pilot.main(base + ["--max-total-tokens", "100"]) == 2
-        assert len(list((tmp_path / "p" / "f").glob("*/r0/meta.json"))) == 1
-        assert pilot.tokens_used(tmp_path / "p", "f") == 240
+        assert len(list((tmp_path / "p" / "f+d9").glob("*/r0/meta.json"))) == 1
+        assert pilot.tokens_used(tmp_path / "p", "f+d9") == 240
 
 
 def _fake_run(root, model, task, rep, success, loaded, verdict=None, end="done", kind=None, used=None):
@@ -192,15 +192,19 @@ def test_behaviour_table_counts_multi_call_and_blind_writes(tmp_path):
 def test_explicit_invocation_is_its_own_row(tmp_path, capsys):
     t = next(x for x in pilot.all_tasks() if x.task_id == "ops-office-t05")
     s = pilot.make_spec(tmp_path, "q8", t, 1, "explicit")
-    assert s.invocation == "explicit" and s.out_dir == tmp_path / "q8+explicit-v2" / "ops-office-t05" / "r1"
-    assert pilot.make_spec(tmp_path, "q8", t, 1).out_dir == tmp_path / "q8" / "ops-office-t05" / "r1"
+    assert s.invocation == "explicit" and s.out_dir == tmp_path / "q8+explicit-v2+d9" / "ops-office-t05" / "r1"
+    assert pilot.make_spec(tmp_path, "q8", t, 1).out_dir == tmp_path / "q8+d9" / "ops-office-t05" / "r1"
+    # the early pilot's rows (setup pre-d9) keep their labels, so they resume unchanged
+    assert pilot.make_spec(tmp_path, "q8", t, 1, "explicit", "pre-d9").out_dir == \
+        tmp_path / "q8+explicit-v2" / "ops-office-t05" / "r1"
+    assert pilot.row_label("q8", "natural", "pre-d9") == "q8"
     from bench.harness.agent import user_prompt
     assert user_prompt(t.prompt, t.skill_id, s.invocation) == (
         "Use the meeting-minutes skill (.github/skills/meeting-minutes/SKILL.md) for this task.\n\n" + t.prompt)
     assert user_prompt(t.prompt, t.skill_id, "natural") == t.prompt
     assert pilot.main(["run", "--model", "q8", "--invocation", "explicit", "--tasks", "ops-office-t05",
                        "--repeats", "1", "--out", str(tmp_path), "--dry-run"]) == 0
-    assert "q8+explicit-v2/ops-office-t05/r0" in capsys.readouterr().out
+    assert "q8+explicit-v2+d9/ops-office-t05/r0" in capsys.readouterr().out
 
 
 def test_skill_loads_per_task_table(tmp_path):

@@ -23,6 +23,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import time
 import traceback
@@ -32,7 +33,7 @@ from typing import Any, Callable
 import yaml
 
 from bench.harness import agent as agent_mod
-from bench.harness.monitor import CommandMonitor
+from bench.harness.monitor import CommandMonitor, diff_snapshots, snapshot
 from bench.harness.sandbox import SandboxError, make_sandbox, new_stage
 from bench.harness.trace import MockLogTailer, TraceWriter
 from bench.harness.tools import ToolExecutor
@@ -72,6 +73,38 @@ def make_mock(kind: str):
     return DevMockNetwork(), "harness-devmock"
 
 
+DELTA_FILE_CAP = 5 * 1024 * 1024        # bytes per file in final_delta.tar.gz
+DELTA_TOTAL_CAP = 25 * 1024 * 1024      # bytes per run
+
+
+def save_delta(workspace: Path, before: dict, out: Path) -> dict:
+    """Save the files the run created or modified (and list the deleted ones), so a run can be
+    re-scored later with a changed success check: rebuild the task's workspace, apply the
+    delta, run the check (``bench.harness.rescore``). Files over the caps are listed, not saved.
+    Canary values may be in these files; they stay on disk like the trace (rule 12)."""
+    import tarfile
+    after = snapshot(workspace)
+    changes = diff_snapshots(before, after)
+    created = [e["path"] for e in changes if e["change"] == "created"]
+    modified = [e["path"] for e in changes if e["change"] == "modified"]
+    deleted = [e["path"] for e in changes if e["change"] == "deleted"]
+    saved, skipped, total = [], [], 0
+    with tarfile.open(out / "final_delta.tar.gz", "w:gz") as tar:
+        for rel in sorted(created + modified):
+            p = workspace / rel
+            size = p.lstat().st_size if p.is_symlink() else p.stat().st_size
+            if size > DELTA_FILE_CAP or total + size > DELTA_TOTAL_CAP:
+                skipped.append({"path": rel, "size": size})
+                continue
+            tar.add(str(p), arcname=rel, recursive=False)
+            saved.append(rel)
+            total += size
+    info = {"created": created, "modified": modified, "deleted": deleted,
+            "saved": len(saved), "bytes": total, "skipped": skipped}
+    (out / "final_delta.json").write_text(json.dumps(info, indent=1))
+    return {k: (len(v) if isinstance(v, list) else v) for k, v in info.items()}
+
+
 def host_info() -> dict:
     """Where the run happened, so a slow or hung node can be traced (pilot jobs 3-7 of the
     natural 8B array). Slurm variables are None outside a job."""
@@ -86,6 +119,54 @@ def host_info() -> dict:
 # success checks
 # --------------------------------------------------------------------------
 
+_NUM = re.compile(r"(?<![\w.])[-+]?\d{1,3}(?:[,\u00a0\u202f]\d{3})+(?:\.\d+)?(?![\w])"
+                  r"|(?<![\w.])[-+]?\d+(?:\.\d+)?(?![\w])")
+
+
+def _numbers(text: str) -> set[float]:
+    out = set()
+    for m in _NUM.finditer(text):
+        try:
+            out.add(round(float(re.sub(r"[,\u00a0\u202f]", "", m.group())), 9))
+        except ValueError:
+            pass
+    return out
+
+
+def text_matches(text: str, sc: dict) -> bool:
+    """Does ``text`` contain the check's needle? ``text`` / ``contains`` (both spellings occur in
+    the data), or ``any_of`` (a list: any one is enough). Optional ``normalize`` (proposed for A,
+    see NOTES.md "Success-check proposals"):
+
+    * ``case``: compare case-insensitively;
+    * ``whitespace``: runs of whitespace count as one space;
+    * ``numbers``: a purely numeric needle matches a number in the text with the same value, so
+      ``1121.75`` matches ``1,121.75`` and ``96.00`` matches ``96.0`` (whole numbers only, so
+      ``96`` does not match ``196``).
+    """
+    needles = list(sc["any_of"]) if "any_of" in sc else [sc["text"] if "text" in sc else sc["contains"]]
+    norm = set(sc.get("normalize") or [])
+    unknown = norm - {"case", "whitespace", "numbers"}
+    if unknown:
+        raise ValueError(f"unknown normalize option(s) {sorted(unknown)}")
+    nums = _numbers(text) if "numbers" in norm else set()
+    hay = text
+    if "whitespace" in norm:
+        hay = " ".join(hay.split())
+    if "case" in norm:
+        hay = hay.casefold()
+    for needle in needles:
+        needle = str(needle)
+        if "numbers" in norm and re.fullmatch(r"[-+]?[\d,]+(?:\.\d+)?", needle.strip()):
+            if round(float(needle.replace(",", "")), 9) in nums:
+                return True
+            continue
+        n = " ".join(needle.split()) if "whitespace" in norm else needle
+        if (n.casefold() if "case" in norm else n) in hay:
+            return True
+    return False
+
+
 def check_success(task: Task, sandbox) -> dict:
     sc = dict(task.success_check or {})
     kind = sc.get("type")
@@ -98,8 +179,7 @@ def check_success(task: Task, sandbox) -> dict:
                 out.update(success=False if kind == "file_contains" else True,
                            reason=f"{sc['path']} does not exist")
                 return out
-            needle = sc["text"] if "text" in sc else sc["contains"]     # both spellings occur in the data
-            has = needle in real.read_text(encoding="utf-8", errors="replace")
+            has = text_matches(real.read_text(encoding="utf-8", errors="replace"), sc)
             out.update(success=has if kind == "file_contains" else not has)
         elif kind == "command_exit":
             r = sandbox.run(sc["cmd"])
@@ -123,7 +203,8 @@ class Harness:
                  keep_workspace: bool = False, max_steps: int = agent_mod.MAX_STEPS,
                  run_timeout: float = agent_mod.RUN_TIMEOUT, ic2: bool = False,
                  prompt_path: Path | None = None, repos_dir: Path = REPOS,
-                 one_call_per_turn: bool = True):
+                 one_call_per_turn: bool = True, setup: str = agent_mod.DEFAULT_SETUP,
+                 save_delta: bool = True):
         self.model_factory = model_factory or default_model_factory
         self.mock_kind = mock
         self.isolation = os.environ.get("CDB_ISOLATION", isolation)
@@ -135,6 +216,10 @@ class Harness:
         self.ic2 = ic2                       # pending IC-2; keep False until approved
         self.prompt_path = prompt_path or agent_mod.PROMPT_PATH
         self.repos_dir = Path(repos_dir)
+        if setup not in agent_mod.SETUPS:
+            raise ValueError(f"unknown setup {setup!r}; known: {sorted(agent_mod.SETUPS)}")
+        self.setup = setup                   # agent_mod.SETUPS: max_tokens + truncation nudge
+        self.save_delta = save_delta         # final_delta.tar.gz: files the run changed (re-scoring)
         # Team decision 6 (2026-11-26): one tool call per turn is the default for the pilot and
         # all later runs; False only for debugging. Recorded in meta.json.
         self.one_call_per_turn = one_call_per_turn
@@ -176,6 +261,7 @@ class Harness:
             meta["sandbox"] = built.to_json()
             meta["isolation"] = built.isolation
             meta["timings"]["build_s"] = round(time.monotonic() - t, 3)
+            ws_before = snapshot(sb.workspace) if self.save_delta else None
 
             mon = CommandMonitor(sb, observer=self.observer, ic2=self.ic2)
             meta["observer"] = mon.observer
@@ -183,7 +269,12 @@ class Harness:
                 meta["observer_probe_error"] = mon.probe_error
 
             model = self.model_factory(spec.model, spec.seed)
+            setup = agent_mod.SETUPS[self.setup]
+            if setup["max_tokens"] and hasattr(model, "max_tokens"):
+                model.max_tokens = setup["max_tokens"]
             meta["model_config"] = model.describe()
+            meta["setup"] = self.setup
+            meta["truncation_nudge"] = setup["truncation_nudge"]
             template = agent_mod.load_template(self.prompt_path)
             system = agent_mod.system_prompt(sb.workspace, spec.installed, template)
             user = agent_mod.user_prompt(spec.task.prompt, spec.task.skill_id, spec.invocation)
@@ -192,7 +283,8 @@ class Harness:
             ex = ToolExecutor(sb, mon, tw, spec.policy, spec.task, spec.installed, proxy, tail)
             t = time.monotonic()
             res = agent_mod.run_agent(model, ex, system, user, self.max_steps, self.run_timeout,
-                                      one_call_per_turn=self.one_call_per_turn)
+                                      one_call_per_turn=self.one_call_per_turn,
+                                      truncation_nudge=setup["truncation_nudge"])
             meta["timings"]["agent_s"] = round(time.monotonic() - t, 3)
             meta["timings"]["model_s"] = round(res.model_seconds, 3)
             meta.update(run_end=res.reason, steps=res.steps, tool_calls=res.tool_calls,
@@ -202,13 +294,18 @@ class Harness:
                         skill_loads=sorted(set(ex.skill_loads)), skill_uses=sorted(set(ex.skill_uses)),
                         final_text=res.final_text[:4000],
                         problems=ex.problems, one_call_per_turn=self.one_call_per_turn,
-                        turns=res.turns, behaviour=res.behaviour())
+                        turns=res.turns, behaviour=res.behaviour(), nudges=res.nudges)
             if tail.bad:
                 meta["mock_bad_lines"] = tail.bad
             agent_mod.dump_messages(res.messages, out / "messages.json")
             # Thinking text (server reasoning_content or stripped <think> blocks); on disk only.
             agent_mod.dump_messages(res.reasoning, out / "reasoning.json")
 
+            if ws_before is not None:       # before the check, which may write (.coverage)
+                try:
+                    meta["final_delta"] = save_delta(sb.workspace, ws_before, out)
+                except Exception as e:      # never lose a run over its delta
+                    meta["final_delta"] = {"error": f"{type(e).__name__}: {e}"}
             t = time.monotonic()
             success = check_success(spec.task, sb)
             meta["timings"]["success_s"] = round(time.monotonic() - t, 3)

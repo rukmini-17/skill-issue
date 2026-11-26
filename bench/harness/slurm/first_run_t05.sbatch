@@ -50,7 +50,7 @@ trap 'kill $SRV 2>/dev/null; wait $SRV 2>/dev/null; cdb_log_buffers "$SLOG" exit
 cdb_log_buffers "$SLOG"
 echo "server ready after $SECONDS s"
 
-"$PY" -m bench.harness.run_task "$TASK" --model "$MODEL" --invocation "${INVOCATION:-natural}" \
+"$PY" -m bench.harness.run_task "$TASK" --model "$MODEL" --invocation "${INVOCATION:-natural}" --setup "${SETUP:-d9}" \
     --isolation netns --observer strace --judge --out runs/first_run
 RC=$?
 echo "run_task exit $RC"
