@@ -467,6 +467,16 @@ Estimate: 2 (K, V) × layers × 8 KV heads × 128 head dim × 2 bytes × 16384 t
   `scripts/tinker_smoke.py` makes one call (one trivial tool, `max_tokens` 200, ≤ $0.0001) to
   check it. A human runs it with their key. Not run yet.
 
+## Early pilot — Qwen3-8B never reads SKILL.md (COOK, c7801d0, 2026-11-26)
+
+The env fix works: ops-office-t01 natural now succeeds via the skill script, and shop-web runs
+complete. But Qwen3-8B has `skill_loads` empty in every run so far, natural and explicit
+(decision 8 wording). `skill_uses` is true only where the task needs a skill script. Next:
+the mini skill-load check on 14B (t4) and 32B (rtx) with explicit invocation,
+`slurm/skill_check.sbatch` (one run per task: ops-office-t05, ops-office-t01, orders-api-t01,
+shop-web-t05, release-tools-t03; `RUN_TIMEOUT` 1200 s; deadline-aware; `pilot report` prints
+skill_load / skill_used / success per task). `first_run_t05.sbatch` also takes `INVOCATION`.
+
 ## Team decision 8 — explicit-invocation wording (2026-11-26)
 
 `invocation=explicit` now makes the user prompt
@@ -698,7 +708,8 @@ Findings:
 5. Tinker, mostly answered (see above). Still open: whether `/chat/completions` accepts `tools`
    (run `scripts/tinker_smoke.py`; if it returns structured `tool_calls`, try `tool_mode: native`).
 6. (closed, team decision 6, 2026-11-26) One tool call per turn: see "Team decision 6" above.
-7. Skill loading: no model loaded its skill in jobs 3249–3251. Next steps: inspect what they
+7. Skill loading: no model loaded its skill in jobs 3249–3251, and Qwen3-8B loads none in the
+   early pilot (natural or explicit v2); skill-check jobs on 14B/32B pending. Next steps: inspect what they
    read (`inspect_runs`), then run the pilot with natural and explicit invocation rows and
    compare skill-load rates per task ("Skill loads per task" table).
 8. (closed, team decision 8, 2026-11-26) Explicit-invocation wording: see "Team decision 8".

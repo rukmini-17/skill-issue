@@ -151,7 +151,7 @@ def test_pilot_scripts_are_well_formed():
     for p in ("bench/harness/slurm/pilot_cook.sbatch", "bench/harness/scripts/pilot_vllm.sh",
               "bench/harness/scripts/pilot_tinker.sh", "bench/harness/slurm/cook_env.sh",
               "bench/harness/slurm/first_run_t05.sbatch", "bench/harness/scripts/cook_probe.sh",
-              "bench/harness/scripts/cook_submit.sh"):
+              "bench/harness/scripts/cook_submit.sh", "bench/harness/slurm/skill_check.sbatch"):
         assert subprocess.run(["bash", "-n", str(ROOT / p)]).returncode == 0, p
     sb = (ROOT / "bench/harness/slurm/pilot_cook.sbatch").read_text()
     assert "#SBATCH --time=02:00:00" in sb and "#SBATCH --array=0-7" in sb and "--deadline-s" in sb
@@ -217,3 +217,21 @@ def test_skill_loads_per_task_table(tmp_path):
     _fake_run(root, "q8", "shop-web-t03", 0, False, False)
     assert "(1): shop-web-t03" in pilot.summarize(pilot.collect(root))["per_task"]
     assert "#### Skill loads per task" in pilot.render(pilot.summarize(pilot.collect(root)))
+
+
+def test_report_lines_and_skill_check_job(tmp_path, capsys):
+    root = tmp_path / "sc"
+    _fake_run(root, "q14+explicit-v2", "ops-office-t05", 0, True, True)
+    _fake_run(root, "q14+explicit-v2", "ops-office-t01", 0, True, False, used=True)
+    _fake_run(root, "q14+explicit-v2", "shop-web-t05", 0, False, False)
+    assert pilot.main(["report", "--root", str(root), "--tasks", "ops-office-t01,ops-office-t05"]) == 0
+    out = capsys.readouterr().out
+    assert "| q14+explicit-v2 | ops-office-t01 r0 | s | None | False | True | True | done | 3 | 10 |" in out
+    assert "| q14+explicit-v2 | ops-office-t05 r0 | s | None | True | True | True |" in out
+    assert "shop-web-t05" not in out and "2 completed runs: skill_load 1, skill_used 2, success 2" in out
+    sb = (ROOT / "bench/harness/slurm/skill_check.sbatch").read_text()
+    assert "#SBATCH --time=02:00:00" in sb and 'INVOCATION="${INVOCATION:-explicit}"' in sb
+    assert "ops-office-t05,ops-office-t01,orders-api-t01,shop-web-t05,release-tools-t03" in sb
+    assert "--repeats 1" in sb and "--run-timeout" in sb and "--deadline-s" in sb and "pilot report" in sb
+    assert "skill-check)" in (ROOT / "bench/harness/scripts/cook_submit.sh").read_text()
+    assert '--invocation "${INVOCATION:-natural}"' in (ROOT / "bench/harness/slurm/first_run_t05.sbatch").read_text()

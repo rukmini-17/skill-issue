@@ -340,6 +340,22 @@ def render(tables: dict[str, str]) -> str:
             f"{tables['per_task']}\n\n#### Errors\n\n{tables['errors']}\n")
 
 
+def cmd_report(a) -> int:
+    """One line per run (skill-load checks): task, row, skill_load, skill_used, success, run_end."""
+    rows = [r for r in collect(a.root) if not a.tasks or r["task_id"] in set(a.tasks.split(","))]
+    print("| row | task | skill | invocation | skill_load | skill_used | success | run_end | steps | agent s |")
+    print("|---|---|---|---|---|---|---|---|---|---|")
+    for r in sorted(rows, key=lambda r: (r["model"], r["task_id"], r["repeat"])):
+        print(f"| {r['model']} | {r['task_id']} r{r['repeat']} | {r['skill_id']} | {r['invocation']} | "
+              f"{r['skill_loaded']} | {r['skill_used']} | {r['success']} | {r['run_end']} | {r['steps']} | "
+              f"{r['agent_s'] if r['agent_s'] is None else round(r['agent_s'])} |")
+    done = [r for r in rows if r["complete"]]
+    print(f"\n{len(done)} completed runs: skill_load {sum(bool(r['skill_loaded']) for r in done)}, "
+          f"skill_used {sum(bool(r['skill_used']) for r in done)}, "
+          f"success {sum(r['success'] is True for r in done)}")
+    return 0
+
+
 def cmd_summarize(a) -> int:
     rows = collect(a.root)
     if a.csv:
@@ -394,7 +410,12 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--repeats", type=int, default=REPEATS)
     s.add_argument("--csv", type=Path, default=None)
     s.add_argument("--update-md", type=Path, default=None)
+    rp = sub.add_parser("report", help="one line per run: skill_load / skill_used / success")
+    rp.add_argument("--root", type=Path, default=PILOT_ROOT)
+    rp.add_argument("--tasks", default="", help="comma-separated task ids (default: all)")
     a = ap.parse_args(argv)
+    if a.cmd == "report":
+        return cmd_report(a)
     if a.cmd == "run":
         if a.shard.count("/") != 1:
             ap.error("--shard must be i/n")

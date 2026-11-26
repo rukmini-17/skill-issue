@@ -78,6 +78,19 @@ lists the 165 runs, and `.venv/bin/python -m bench.backends serve-cmd <model>` p
 
    Copy the "llama-server memory" block into NOTES.md ("Memory at 16384"): CSCF validated
    only a 2048-token context. Repeat with `qwen3-14b-llamacpp` (t4) and `qwen3-32b-llamacpp` (rtx).
+2b. Mini skill-load check (one run per task, five tasks, explicit invocation by default,
+   one 2-hour job; per-run limit `RUN_TIMEOUT`=1200 s and no run starts unless it can finish):
+
+   ```sh
+   sh bench/harness/scripts/cook_submit.sh skill-check qwen3-14b-llamacpp    # t4
+   sh bench/harness/scripts/cook_submit.sh skill-check qwen3-32b-llamacpp    # rtx
+   cat runs/skill_check/logs/cdb-skill-check-<jobid>.out                     # table at the end
+   ```
+
+   Default tasks: ops-office-t05, ops-office-t01, orders-api-t01, shop-web-t05,
+   release-tools-t03. Override with `TASKS=a,b,c` and `INVOCATION=natural` in front of the
+   command. Runs go to `runs/skill_check/<model>+explicit-v2/`; resubmitting resumes. Print the
+   table again any time with `.venv/bin/python -m bench.harness.pilot report --root runs/skill_check`.
 3. Pilot, one array of 8 shards per model (2-hour limit each):
 
    ```sh
