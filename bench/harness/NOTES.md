@@ -467,6 +467,31 @@ Estimate: 2 (K, V) × layers × 8 KV heads × 128 head dim × 2 bytes × 16384 t
   `scripts/tinker_smoke.py` makes one call (one trivial tool, `max_tokens` 200, ≤ $0.0001) to
   check it. A human runs it with their key. Not run yet.
 
+## Team decision 8 — explicit-invocation wording (2026-11-26)
+
+`invocation=explicit` now makes the user prompt
+
+```
+Use the <skill_id> skill (.github/skills/<skill_id>/SKILL.md) for this task.
+
+<task prompt>
+```
+
+(`agent.EXPLICIT_PREFIX`), replacing `/<skill_id> <task prompt>`, which Qwen3 did not act on
+(pilot run ops-office-t01 r0). Natural stays the default. `meta.json` → `explicit_form: "v2"`
+(None for natural runs). The pilot writes explicit runs to `<model>+explicit-v2/`, so rows
+already run with the slash form (`<model>+explicit/`) are kept apart and not resumed into
+the new row. Tests: `test_system_prompt_and_user_message`, `test_explicit_invocation_is_its_own_row`.
+
+## Node.js on COOK (2026-11-26)
+
+`check_env` on COOK: the Python side passes; only node/npm were missing (no node module on
+COOK). Installed Node v22.23.5 at `~/opt/node` (PILOT.md step 0). `cook_env.sh` puts
+`$CDB_NODE_DIR` (default `$HOME/opt/node/bin`) on PATH for every partition and exits 2 if
+node/npm are not there. `Sandbox._path` puts `$CDB_NODE_DIR` right after the venv's `bin/` (the
+harness PATH would carry it anyway). `check_env` prints where node/npm came from: CDB_NODE_DIR
+or the host PATH. Test: `test_sandbox_path_has_venv_then_cdb_node_dir`.
+
 ## Pilot finding — ops-office-t01 r0, explicit row (COOK, eed0545)
 
 The prompt started with `/convert-excel-to-md`. The agent ran the skill's script with a wrong
@@ -676,19 +701,4 @@ Findings:
 7. Skill loading: no model loaded its skill in jobs 3249–3251. Next steps: inspect what they
    read (`inspect_runs`), then run the pilot with natural and explicit invocation rows and
    compare skill-load rates per task ("Skill loads per task" table).
-8. **OPEN DECISION (proposed by B, needs team sign-off): explicit-invocation wording.** Today
-   `invocation=explicit` makes the user prompt `/<skill_id> <task prompt>`. That is the
-   slash-command convention of agent CLIs, and it may mean nothing to Qwen3: in pilot run
-   ops-office-t01 r0 the model ran the skill's script but never read its SKILL.md. Proposed:
-
-   ```
-   Use the <skill_id> skill (.github/skills/<skill_id>/SKILL.md) for this task.
-
-   <task prompt>
-   ```
-
-   This names the skill and its SKILL.md path in plain words. It is one line in
-   `agent.user_prompt`; natural stays the default. If adopted, the explicit rows already run
-   with `/<skill_id>` are not comparable with new ones and should be rerun (or kept as a separate
-   "slash" condition). Not applied.
-
+8. (closed, team decision 8, 2026-11-26) Explicit-invocation wording: see "Team decision 8".

@@ -46,6 +46,23 @@ lists the 165 runs, and `.venv/bin/python -m bench.backends serve-cmd <model>` p
 
 **COOK (llama.cpp, Q4_K_M).** Log in with `ssh -l 'rnazre@umass.edu' cook.cs.umass.edu`, then:
 
+0. Once: Node.js. COOK has no node module, and the shop-web tasks need `node`/`npm`. Install the
+   official Linux x64 build in your home directory (done 2026-11-26: v22.23.5 at `~/opt/node`):
+
+   ```sh
+   mkdir -p ~/opt && cd ~/opt
+   curl -fsSLO https://nodejs.org/dist/v22.23.5/node-v22.23.5-linux-x64.tar.xz
+   curl -fsSL https://nodejs.org/dist/v22.23.5/SHASUMS256.txt | grep linux-x64.tar.xz | sha256sum -c -
+   tar -xf node-v22.23.5-linux-x64.tar.xz && ln -sfn node-v22.23.5-linux-x64 node
+   ~/opt/node/bin/node --version && PATH=~/opt/node/bin:$PATH npm --version
+   ```
+
+   npm starts with `#!/usr/bin/env node`, so `~/opt/node/bin` must be on PATH. `cook_env.sh` adds
+   `$CDB_NODE_DIR` (default `$HOME/opt/node/bin`) for every partition and stops the job if
+   node/npm are not there. The sandbox puts it right after the venv on its PATH. Then, from
+   the repo root, with the modules loaded:
+   `CDB_NODE_DIR=~/opt/node/bin .venv/bin/python -m bench.harness.check_env --isolation netns`
+   must print "environment OK", and node/npm "(from CDB_NODE_DIR=…)".
 1. Once, on the login node (done 2026-11-25): `bash bench/harness/scripts/cook_probe.sh 2>&1 | tee runs/cook_probe.txt`
    prints CSCF's example jobs, the llama-server flags, the GGUF files and the venv check.
    One `.venv` works on every partition (its python links to `python/3.13.15`).
@@ -70,9 +87,13 @@ lists the 165 runs, and `.venv/bin/python -m bench.backends serve-cmd <model>` p
    ```
 
    Resubmit the same command to finish runs a shard did not reach (exit code 2 in the log).
-   **Explicit-invocation row** (the prompt starts with `/<skill_id>`; natural is the default):
+   **Explicit-invocation row** (team decision 8: the user prompt is "Use the <skill_id> skill
+   (.github/skills/<skill_id>/SKILL.md) for this task." then a blank line and the task prompt;
+   natural is the default):
    `INVOCATION=explicit sh bench/harness/scripts/cook_submit.sh pilot qwen3-8b-llamacpp`.
-   Its runs go to `runs/pilot/<model>+explicit/`, and the summary shows it as its own row,
+   Its runs go to `runs/pilot/<model>+explicit-v2/`. Rows named `<model>+explicit` hold the
+   earlier `/<skill_id>` form and are not mixed in. Each run's `meta.json` has `explicit_form`.
+   The new row and the summary shows it as its own row,
    so skill-load rates can be compared per task. `INVOCATION=explicit` works the same for
    `pilot_vllm.sh` and `pilot_tinker.sh`; `pilot run --invocation explicit` directly.
    To see what an agent read (paths, URLs and commands only; no contents):
@@ -92,7 +113,7 @@ lists the 165 runs, and `.venv/bin/python -m bench.backends serve-cmd <model>` p
 `MAX_TOKENS=<cap> bash bench/harness/scripts/pilot_tinker.sh qwen3-8b-tinker`, smoke-tested with
 `TASKS=ops-office-t05 REPEATS=1` first. Qwen3-32B is retired on Tinker; 4B/14B are not offered.
 
-Outputs: `runs/pilot/<model>[+explicit]/<task_id>/r<k>/` (`meta.json`, `trace.jsonl`,
+Outputs: `runs/pilot/<model>[+explicit-v2]/<task_id>/r<k>/` (`meta.json`, `trace.jsonl`,
 `success.json`, `messages.json`, `reasoning.json`, `mock.jsonl`), `runs/pilot/<model>/progress.jsonl`,
 logs in `runs/pilot/logs/`.
 

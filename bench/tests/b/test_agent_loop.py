@@ -99,7 +99,10 @@ def test_system_prompt_and_user_message(tmp_path):
     sp = spec(tmp_path, invocation="explicit")
     harness(model, tmp_path).run(sp)
     sys_msg, user_msg = model.calls[0][0], model.calls[0][1]
-    assert user_msg == {"role": "user", "content": "/meeting-minutes " + T05.prompt}
+    assert user_msg == {"role": "user", "content": "Use the meeting-minutes skill "
+                        "(.github/skills/meeting-minutes/SKILL.md) for this task.\n\n" + T05.prompt}
+    meta = json.loads((sp.out_dir / "meta.json").read_text())
+    assert meta["invocation"] == "explicit" and meta["explicit_form"] == "v2"
     for sid, v in repo_install_set(REPOS / "ops-office").items():
         assert f"(path: `.github/skills/{sid}/SKILL.md`)" in sys_msg["content"]
     assert "meeting-minutes: Generate concise, actionable meeting minutes" in sys_msg["content"]

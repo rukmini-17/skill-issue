@@ -298,3 +298,25 @@ def test_check_env_requirements_cover_skill_files():
     from bench.harness import check_env
     dists = {d for _, d, _ in check_env.requirement_lines()}
     assert {"markitdown", "pytest-cov", "coverage", "openpyxl", "pandas", "numpy", "pytest", "ruff"} <= dists
+
+
+def test_sandbox_path_has_venv_then_cdb_node_dir(tmp_path, monkeypatch):
+    import sys
+    from bench.harness.sandbox import make_sandbox
+    node = tmp_path / "node" / "bin"
+    node.mkdir(parents=True)
+    monkeypatch.setenv("CDB_NODE_DIR", str(node))
+    monkeypatch.setenv("PATH", f"/usr/bin:{node}:/bin")
+    sb = make_sandbox(REPOS / "ops-office", "http://127.0.0.1:1", isolation="env", work_root=tmp_path / "w")
+    try:
+        parts = sb.env()["PATH"].split(":")
+        assert parts[:2] == [str(Path(sys.executable).parent), str(node)] and parts.count(str(node)) == 1
+        assert parts[2:] == ["/usr/bin", "/bin"]
+    finally:
+        sb.close()
+    monkeypatch.setenv("CDB_NODE_DIR", str(tmp_path / "missing"))
+    sb = make_sandbox(REPOS / "ops-office", "http://127.0.0.1:1", isolation="env", work_root=tmp_path / "w2")
+    try:
+        assert str(tmp_path / "missing") not in sb.env()["PATH"]
+    finally:
+        sb.close()

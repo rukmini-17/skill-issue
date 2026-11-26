@@ -20,6 +20,7 @@ Prints versions and pin mismatches as warnings. Never prints file contents.
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sys
 from pathlib import Path
@@ -94,12 +95,19 @@ def main(argv: list[str] | None = None) -> int:
         sb.build(repo_install_set(REPOS / "ops-office"))
         print(f"sandbox: isolation {sb.isolation}, workspace {sb.workspace}")
         print(f"PATH inside: {sb.env()['PATH'].split(':')[:3]} ...")
+        node_dir = os.environ.get("CDB_NODE_DIR")
         for c in COMMANDS:
             r = sb.run(f"command -v {c}")
             where = r.stdout.strip()
-            print(f"  {c:8s} -> {where or 'NOT FOUND'}")
+            origin = ""
+            if where and c in ("node", "npm"):
+                origin = (f"  (from CDB_NODE_DIR={node_dir})" if node_dir and Path(where).parent == Path(node_dir)
+                          else "  (from the host PATH" + (f"; CDB_NODE_DIR={node_dir} not used)" if node_dir else ")"))
+            print(f"  {c:8s} -> {where or 'NOT FOUND'}{origin}")
             if r.exit != 0 or not where:
-                problems.append(f"`{c}` is not on the sandbox PATH")
+                hint = (" (COOK: install Node at ~/opt/node and set CDB_NODE_DIR, see PILOT.md)"
+                        if c in ("node", "npm") else "")
+                problems.append(f"`{c}` is not on the sandbox PATH{hint}")
         for c, flag in (("node", "--version"), ("npm", "--version"), ("git", "--version"), ("ruff", "--version"),
                         ("pytest", "--version")):
             r = sb.run(f"{c} {flag}")

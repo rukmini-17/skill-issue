@@ -22,6 +22,16 @@ case "$CDB_PART" in
             || { echo "module load llm-r615-llamacpp/2026.11 python/3.13.15 failed"; exit 2; } ;;
   *)      echo "unknown partition $CDB_PART (expected gtx, t4 or rtx)"; exit 2 ;;
 esac
+# Node.js: COOK has no node module. A user install (Node v22.23.5 at ~/opt/node, see
+# PILOT.md) goes on PATH for every partition; npm needs it there (`#!/usr/bin/env node`).
+# The harness passes its PATH on to the sandbox, so agent commands see it too.
+CDB_NODE_DIR="${CDB_NODE_DIR:-$HOME/opt/node/bin}"
+if [ -x "$CDB_NODE_DIR/node" ] && [ -x "$CDB_NODE_DIR/npm" ]; then
+  export PATH="$CDB_NODE_DIR:$PATH"
+  export CDB_NODE_DIR
+else
+  echo "node/npm not found in CDB_NODE_DIR=$CDB_NODE_DIR (install Node at ~/opt/node, see PILOT.md)"; exit 2
+fi
 set -u
 : "${CUDA_VISIBLE_DEVICES:?Slurm GPU assignment is missing (submit with --gres=gpu:1)}"
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-4}"
@@ -31,6 +41,7 @@ export LLAMA_SERVER="${LLAMA_SERVER:-$(command -v llama-server || echo "${LLAMA_
   || { echo "harness Python $PY cannot import its dependencies under the $CDB_PART modules"; exit 2; }
 echo "partition $CDB_PART node $(hostname); modules: $(module -t list 2>&1 | tr '\n' ' ')"
 echo "python $PY ($("$PY" -V 2>&1)); llama-server $LLAMA_SERVER; CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES"
+echo "node $(command -v node) ($(node --version 2>&1)); npm $(npm --version 2>&1)"
 
 # cdb_start_server LOG CMD...: start llama-server in the background, SRV=<pid>.
 # Launched directly when the batch step sees the GPU (nvidia-smi lists it); otherwise

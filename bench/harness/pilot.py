@@ -72,8 +72,13 @@ INVOCATIONS = ("natural", "explicit")
 
 def row_label(model: str, invocation: str = "natural") -> str:
     """Directory / table row for one pilot row. Natural (the default) keeps the bare model
-    name; explicit invocation (the prompt starts with ``/<skill_id>``) is its own row."""
-    return model if invocation == "natural" else f"{model}+{invocation}"
+    name. Explicit invocation (decision 8 wording, ``agent.EXPLICIT_PREFIX``) is its own row,
+    ``<model>+explicit-v2``. Rows named ``<model>+explicit`` hold the earlier
+    ``/<skill_id>`` form and are not resumed into the new row."""
+    if invocation == "natural":
+        return model
+    from bench.harness.agent import EXPLICIT_FORM
+    return f"{model}+{invocation}-{EXPLICIT_FORM}"
 
 
 def run_dir(root: Path, model: str, task: Task, rep: int) -> Path:
@@ -330,8 +335,8 @@ def render(tables: dict[str, str]) -> str:
             "#### Behaviour\n\n'Wrote before reading': a turn with `write_file` alongside a read, "
             "list, request or command whose result the model had not seen yet.\n\n"
             f"{tables['behaviour']}\n\n#### Skill loads per task\n\nEach cell: runs that read the task's "
-            "SKILL.md / runs that passed the success check, over completed runs. A `+explicit` row "
-            "used explicit invocation.\n\n"
+            "SKILL.md / runs that passed the success check, over completed runs. A `+explicit-v2` row "
+            "used explicit invocation (decision 8 wording); a `+explicit` row the earlier `/<skill_id>` form.\n\n"
             f"{tables['per_task']}\n\n#### Errors\n\n{tables['errors']}\n")
 
 
@@ -368,7 +373,8 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--repeats", type=int, default=REPEATS)
     r.add_argument("--invocation", choices=INVOCATIONS, default="natural",
                    help="natural (default): the task prompt as written; explicit: prompt starts with "
-                        "/<skill_id> and runs go to <model>+explicit/")
+                        "'Use the <skill_id> skill (.github/skills/<skill_id>/SKILL.md) for this task.' "
+                        "and runs go to <model>+explicit-v2/")
     r.add_argument("--tasks", default="", help="comma-separated task ids or repo ids (default: all 55)")
     r.add_argument("--shard", default="0/1", help="i/n")
     r.add_argument("--workers", type=int, default=1, help="parallel runs (vLLM batches; llama.cpp: keep 1)")

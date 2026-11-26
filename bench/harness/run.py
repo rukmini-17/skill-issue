@@ -138,6 +138,7 @@ class Harness:
             "run_id": spec.run_id, "harness": "bench.harness.run", "task_id": spec.task.task_id,
             "skill_id": spec.task.skill_id,
             "repo_id": spec.task.repo_id, "model": spec.model, "invocation": spec.invocation,
+            "explicit_form": agent_mod.EXPLICIT_FORM if spec.invocation == "explicit" else None,
             "seed": spec.seed, "policy_runtime": getattr(spec.policy, "name", None),
             "attack_run": spec.scenario is not None, "ic2": self.ic2,
             "installed": {sid: v.version for sid, v in spec.installed.items()},

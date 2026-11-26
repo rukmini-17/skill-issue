@@ -2,8 +2,8 @@
 
 ``run_agent`` drives one model through one task:
 
-* messages = system prompt (D8 skill list) + the task prompt (``/<skill_id> ``
-  prefixed for ``invocation: explicit``);
+* messages = system prompt (D8 skill list) + the task prompt (for ``invocation:
+  explicit``, preceded by ``EXPLICIT_PREFIX``, team decision 8);
 * each model turn may call tools; each call goes through ``ToolExecutor``;
 * malformed calls (unknown tool, bad JSON, wrong arguments) are returned to the
   model as errors and logged (``AgentResult.malformed``); they are not executed
@@ -50,8 +50,18 @@ def system_prompt(workspace: Path, installed: dict, template: str | None = None)
     return (template or load_template()).replace("{skills}", skill_lines(workspace, installed))
 
 
+# Team decision 8 (2026-11-26): plain-words explicit invocation. It replaced
+# "/<skill_id> <task prompt>" (form "slash", which Qwen3 did not act on in pilot run
+# ops-office-t01 r0). EXPLICIT_FORM is recorded in meta.json; the pilot keeps the two
+# forms in separate rows.
+EXPLICIT_FORM = "v2"
+EXPLICIT_PREFIX = "Use the {skill_id} skill (.github/skills/{skill_id}/SKILL.md) for this task.\n\n"
+
+
 def user_prompt(task_prompt: str, skill_id: str, invocation: str) -> str:
-    return f"/{skill_id} {task_prompt}" if invocation == "explicit" else task_prompt
+    if invocation == "explicit":
+        return EXPLICIT_PREFIX.format(skill_id=skill_id) + task_prompt
+    return task_prompt
 
 
 @dataclass

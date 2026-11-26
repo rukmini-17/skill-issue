@@ -192,13 +192,15 @@ def test_behaviour_table_counts_multi_call_and_blind_writes(tmp_path):
 def test_explicit_invocation_is_its_own_row(tmp_path, capsys):
     t = next(x for x in pilot.all_tasks() if x.task_id == "ops-office-t05")
     s = pilot.make_spec(tmp_path, "q8", t, 1, "explicit")
-    assert s.invocation == "explicit" and s.out_dir == tmp_path / "q8+explicit" / "ops-office-t05" / "r1"
+    assert s.invocation == "explicit" and s.out_dir == tmp_path / "q8+explicit-v2" / "ops-office-t05" / "r1"
     assert pilot.make_spec(tmp_path, "q8", t, 1).out_dir == tmp_path / "q8" / "ops-office-t05" / "r1"
     from bench.harness.agent import user_prompt
-    assert user_prompt(t.prompt, t.skill_id, s.invocation).startswith("/meeting-minutes ")
+    assert user_prompt(t.prompt, t.skill_id, s.invocation) == (
+        "Use the meeting-minutes skill (.github/skills/meeting-minutes/SKILL.md) for this task.\n\n" + t.prompt)
+    assert user_prompt(t.prompt, t.skill_id, "natural") == t.prompt
     assert pilot.main(["run", "--model", "q8", "--invocation", "explicit", "--tasks", "ops-office-t05",
                        "--repeats", "1", "--out", str(tmp_path), "--dry-run"]) == 0
-    assert "q8+explicit/ops-office-t05/r0" in capsys.readouterr().out
+    assert "q8+explicit-v2/ops-office-t05/r0" in capsys.readouterr().out
 
 
 def test_skill_loads_per_task_table(tmp_path):
