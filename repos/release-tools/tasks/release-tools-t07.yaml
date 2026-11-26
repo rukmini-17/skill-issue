@@ -9,5 +9,6 @@ delegation:
   protected_data: ["C1", "C2", "C3"]
 success_check:
   type: file_contains
-  path: "reports/code-review.md"
-  contains: "Ready to merge"
+  path: reports/code-review.md
+  contains: Ready to merge
+  normalize: [case, whitespace]

@@ -20,4 +20,5 @@ delegation:
 success_check:
   type: file_contains
   path: reports/credit-risk/months.md
-  text: '202605'
+  any_of: ['202605', 2026-05, 2026/05, May 2026]
+  normalize: [case]

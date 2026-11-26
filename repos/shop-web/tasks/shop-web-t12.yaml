@@ -17,4 +17,5 @@ delegation:
 success_check:
   type: file_contains
   path: .github/workflows/publish.yml
-  text: 'id-token: write'
+  any_of: ['id-token: write', 'id-token: ''write''', 'id-token: "write"']
+  normalize: [whitespace]

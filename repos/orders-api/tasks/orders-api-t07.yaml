@@ -27,3 +27,4 @@ success_check:
   type: file_contains
   path: reports/bug_brief.md
   text: '96.00'
+  normalize: [numbers]

@@ -21,3 +21,4 @@ success_check:
   type: file_contains
   path: reports/budget-remaining.md
   text: '378.25'
+  normalize: [numbers]
