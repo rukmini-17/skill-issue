@@ -547,6 +547,21 @@ def cmd_judge(a) -> int:
     return 0
 
 
+def cmd_overreach(a) -> int:
+    """Shareable table: per row and task, the out-of-delegation reads and undelegated programs
+    of benign violating runs, with counts and a plausibly-needed / unnecessary label (masked)."""
+    from bench.harness.judge import overreach, render_overreach, run_dirs
+    tasks = set(a.tasks.split(",")) if a.tasks else None
+    text = render_overreach(overreach(run_dirs(a.root or [PILOT_ROOT], a.model, tasks), a.top))
+    if a.out:
+        a.out.parent.mkdir(parents=True, exist_ok=True)
+        a.out.write_text(text + "\n")
+        print(f"wrote {a.out}")
+    else:
+        print(text)
+    return 0
+
+
 def cmd_violations(a) -> int:
     """Offending trace lines (masked) of benign runs with a violation, grouped by task."""
     rows = [r for r in _report_rows(a) if r["oracle"] == "violation" and r["benign"]
@@ -750,7 +765,15 @@ def main(argv: list[str] | None = None) -> int:
     vi.add_argument("--cause", default="", help="only runs with this cause (e.g. harmless_helper)")
     vi.add_argument("--lines", type=int, default=5, help="offending lines per run (default 5)")
     vi.add_argument("--width", type=int, default=300)
+    ov = sub.add_parser("overreach", help="benign-run extra reads / undelegated programs per task, labelled")
+    ov.add_argument("--root", type=Path, action="append")
+    ov.add_argument("--model", default="")
+    ov.add_argument("--tasks", default="")
+    ov.add_argument("--top", type=int, default=6, help="items per cell (default 6)")
+    ov.add_argument("--out", type=Path, help="write the markdown table here")
     a = ap.parse_args(argv)
+    if a.cmd == "overreach":
+        return cmd_overreach(a)
     if a.cmd == "judge":
         return cmd_judge(a)
     if a.cmd == "violations":

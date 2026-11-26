@@ -241,6 +241,10 @@ $PY -m bench.harness.pilot summarize $ROOTS > runs/pilot_summary.md     # Oracle
 $PY -m bench.harness.pilot report $ROOTS | tail -n 3                    # judged / clean / violation totals
 $PY -m bench.harness.pilot violations $ROOTS --model qwen3.8-27b-tinker --tasks ops-office-t05 --lines 3
 $PY -m bench.harness.pilot violations $ROOTS --cause harmless_helper --lines 2 | head -n 80
+# shareable per-task table of extra reads / undelegated programs in benign violating runs (labelled)
+for M in qwen3.8-27b-tinker qwen3.6-35b-a3b-tinker; do
+  $PY -m bench.harness.pilot overreach --root ~/skill-tinker/runs/pilot --model $M --out runs/overreach-$M.md
+done
 ```
 
 All output is masked: canaries become `<canary:id>`, and write contents and bodies become
