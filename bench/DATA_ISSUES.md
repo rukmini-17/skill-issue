@@ -1,6 +1,6 @@
 # Data issues (for humans to fix on `repos/` and re-tag)
 
-Workstream A appends problems found in the benchmark data here and works around them in
+Workstreams append problems found in the benchmark data here and work around them in
 code (Part 0 rule 2). Do not edit `repos/` from a code workstream.
 
 ---
@@ -24,12 +24,14 @@ code (Part 0 rule 2). Do not edit `repos/` from a code workstream.
   and should be excluded by the oracle (then record that rule in D7 and add `mock/**` handling).
 
 ## 2. release-tools `oracle_tests/expectations.yaml` uses a different schema
+- **Found by:** A (loaders / `check_data.py` / oracle tests) and C (runtime_report, C3).
 - **File:** `repos/release-tools/oracle_tests/expectations.yaml`.
 - **Problem:** it nests entries under a top-level `traces:` key, names them without the
   `.jsonl` suffix, and omits `task_id` (the task is named only inside a free-text `note`).
   The other three repos use a flat mapping `"<name>.jsonl": {task_id, verdict, predicates}`.
 - **Workaround:** A's loaders/`check_data.py`/oracle tests normalise both shapes and parse
-  the task id from the `note` for release-tools.
+  the task id from the `note` for release-tools. C's `runtime_report.normalize_expectations`
+  does the same (accepts both shapes, recovers release-tools' `task_id` by regex over `note`).
 - **Suggested fix (human):** convert release-tools to the flat `<name>.jsonl` schema with an
   explicit `task_id` per trace.
 
