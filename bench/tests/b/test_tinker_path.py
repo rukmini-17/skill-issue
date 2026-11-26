@@ -14,7 +14,7 @@ from bench.backends import BackendError, load_models, make_model
 from bench.backends.base import Budget, cost_usd
 from bench.harness import pilot
 
-from b_fake_openai import FakeOpenAI, tool_call, write_models
+from b_fake_openai import Err, FakeOpenAI, tool_call, write_models
 
 ROOT = Path(__file__).resolve().parents[3]
 PRICE = {"prefill": 10.0, "cached_prefill": 2.0, "sample": 10.0}      # USD per million (test only)
@@ -116,3 +116,81 @@ def test_cpu_only_tinker_job_handles_the_key_safely():
     assert "--gres" not in branch and "unset TINKER_API_KEY" in branch and "CDB_GPUS=0" in branch
     env = (ROOT / "bench/harness/slurm/cook_env.sh").read_text()
     assert 'if [ "$CDB_GPUS" = 0 ]; then' in env and "module load python/3.13.15" in env
+
+
+BODY_422 = '{"detail": [{"loc": ["body", "seed"], "msg": "Extra inputs are not permitted"}]}'
+
+
+def test_422_body_reaches_meta_and_the_progress_log(tmp_path, monkeypatch, capsys):
+    out = tmp_path / "p"
+    with FakeOpenAI([Err(422, body=BODY_422)]) as srv:
+        write_models(tmp_path / "m.yaml", srv.base_url, name="f", retries=0)
+        monkeypatch.setenv("CDB_MODELS", str(tmp_path / "m.yaml"))
+        pilot.main(["run", "--model", "f", "--tasks", "ops-office-t05", "--repeats", "1",
+                    "--isolation", "env", "--out", str(out), "--no-wait"])
+    meta = json.loads((out / "f+d9/ops-office-t05/r0/meta.json").read_text())
+    assert meta["agent_error_kind"] == "bad_request" and "Extra inputs are not permitted" in meta["agent_error_body"]
+    assert '"seed"' in meta["agent_error"]                        # also in the one-line error
+    assert "Extra inputs are not permitted" in capsys.readouterr().err   # job log (progress record)
+
+
+def test_pilot_request_is_the_harness_first_request_and_variants_change_one_thing(tmp_path):
+    from bench.harness import agent as agent_mod
+    from bench.harness.request_probe import first_messages, pilot_request, shape, variants
+    from bench.harness.tools import TOOL_SCHEMAS
+    write_models(tmp_path / "m.yaml", "http://127.0.0.1:9/v1", name="f", seed=None)
+    m = make_model("f", path=tmp_path / "m.yaml", seed=0)
+    kw = pilot_request(m, "ops-office-t05", "explicit", "d9")
+    assert kw["max_tokens"] == 8192 and kw["seed"] == 0 and kw["tools"] == TOOL_SCHEMAS
+    assert kw["parallel_tool_calls"] is False and kw["tool_choice"] == "auto"
+    sysmsg, user = kw["messages"]
+    assert sysmsg["role"] == "system" and "meeting-minutes" in sysmsg["content"]
+    assert user["content"].startswith("Use the meeting-minutes skill (.github/skills/meeting-minutes/SKILL.md)")
+    assert first_messages("ops-office-t05", "natural")[1]["content"] == load_task_prompt("ops-office-t05")
+    vs = dict(variants(kw))
+    for name in ("exact", "max_tokens=16", "no seed", "no parallel_tool_calls", "no tool_choice",
+                 "no temperature", "no tool http_request", "http_request without headers",
+                 "no additionalProperties in schemas", "short system prompt", "no system message",
+                 "smoke tool only (get_time)"):
+        assert name in vs, name
+    assert vs["exact"] is kw and vs["max_tokens=16"]["max_tokens"] == 16
+    assert "seed" not in vs["no seed"] and vs["no seed"]["max_tokens"] == 16 and kw["seed"] == 0
+    assert "additionalProperties" not in json.dumps(vs["no additionalProperties in schemas"]["tools"])
+    assert len(vs["no tool run_command"]["tools"]) == 4
+    assert shape(kw)["tools"] == [t["function"]["name"] for t in TOOL_SCHEMAS]
+    assert agent_mod.SETUPS["d9"]["max_tokens"] == 8192
+
+
+def load_task_prompt(task_id):
+    from bench.common.data import load_repo
+    return load_repo(task_id.rsplit("-t", 1)[0]).tasks[task_id].prompt
+
+
+def test_smoke_pilot_request_finds_the_rejected_field(tmp_path, monkeypatch, capsys):
+    """Against the local fake server (no Tinker call): exact and max_tokens=16 rejected with a
+    422 naming seed; 'no seed' accepted -> reported as the culprit, and the probe stops there."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("tinker_smoke", ROOT / "bench/harness/scripts/tinker_smoke.py")
+    smoke = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(smoke)
+
+    def reply(req):
+        if "seed" in req:
+            return Err(422, body=BODY_422)
+        return {"role": "assistant", "content": None, "tool_calls": [tool_call("list_dir", {"path": "."})]}
+
+    with FakeOpenAI([reply] * 20) as srv:
+        write_models(tmp_path / "m.yaml", srv.base_url, backend="tinker", name="tk", api_key_env="TK_KEY",
+                     model="Qwen/Qwen3.6-35B-A3B",
+                     price={"prefill": 0.54, "cached_prefill": 0.108, "sample": 1.335}, tool_mode="native")
+        monkeypatch.setenv("CDB_MODELS", str(tmp_path / "m.yaml"))
+        monkeypatch.setenv("TK_KEY", "tk-secret-xyz")
+        dump = tmp_path / "req.json"
+        assert smoke.main(["--model", "tk", "--pilot-request", "--dump", str(dump)]) == 0
+        sent = list(srv.requests)
+    out = capsys.readouterr().out
+    assert "Extra inputs are not permitted" in out and "first accepted variant: 'no seed'" in out
+    assert len(sent) == 3 and sent[0]["max_tokens"] == 8192 and sent[1]["max_tokens"] == 16
+    assert "seed" not in sent[2] and len(sent[0]["tools"]) == 5
+    assert "tk-secret-xyz" not in out and "tk-secret-xyz" not in dump.read_text()
+    assert json.loads(dump.read_text())["seed"] == 0

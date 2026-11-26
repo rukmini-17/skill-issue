@@ -288,7 +288,7 @@ class Harness:
             meta["timings"]["agent_s"] = round(time.monotonic() - t, 3)
             meta["timings"]["model_s"] = round(res.model_seconds, 3)
             meta.update(run_end=res.reason, steps=res.steps, tool_calls=res.tool_calls,
-                        malformed_calls=res.malformed, agent_error=res.error,
+                        malformed_calls=res.malformed, agent_error=res.error, agent_error_body=res.error_body,
                         agent_error_kind=res.error_kind, truncated_turns=res.truncated_turns,
                         usage=res.usage,
                         skill_loads=sorted(set(ex.skill_loads)), skill_uses=sorted(set(ex.skill_uses)),

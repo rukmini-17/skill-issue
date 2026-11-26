@@ -96,6 +96,7 @@ class AgentResult:
     reasoning: list[dict] = field(default_factory=list)   # {"step", "text"} -> reasoning.json
     skipped_calls: int = 0                                # one_call_per_turn: calls not run
     nudges: int = 0                                       # d9 truncation nudges sent (0 or 1)
+    error_body: str | None = None                         # server's response body on an HTTP error
 
     def behaviour(self) -> dict:
         """Run-level counts from ``turns`` (meta.json; pilot "behaviour" table)."""
@@ -190,6 +191,7 @@ def run_agent(model: ChatModel, executor: ToolExecutor, system: str, user: str,
     except Exception as e:                                    # model/server failure: record, don't crash
         res.reason = "error"
         res.error = f"{type(e).__name__}: {e}"
+        res.error_body = getattr(e, "body", None)            # HTTP error body (BackendError)
         res.error_kind = getattr(e, "kind", None)
     res.usage = usage
     executor.trace.event("run_end", reason=res.reason, steps=res.steps)

@@ -48,10 +48,39 @@ TOOL_MODES = ("native", "prompt")
 
 
 class BackendError(RuntimeError):
-    def __init__(self, kind: str, message: str, status: int | None = None):
+    """``body``: the server's response body for an HTTP error (4xx/5xx), as sent, up to 4000
+    chars, plus a few response headers that identify the request. Recorded in meta.json
+    (``agent_error_body``) because a 422's reason is usually only in the body."""
+
+    def __init__(self, kind: str, message: str, status: int | None = None, body: str | None = None):
         super().__init__(f"[{kind}] {message}")
         self.kind = kind
         self.status = status
+        self.body = body
+
+
+_ID_HEADERS = ("content-type", "x-request-id", "request-id", "x-amzn-requestid", "cf-ray")
+
+
+def _response_body(exc) -> str | None:
+    """The HTTP response body of an ``openai.APIStatusError`` (text, else the parsed body)."""
+    resp = getattr(exc, "response", None)
+    text = None
+    try:
+        text = resp.text if resp is not None else None
+    except Exception:                       # body already consumed / not readable
+        text = None
+    if not text and getattr(exc, "body", None) is not None:
+        text = exc.body if isinstance(exc.body, str) else json.dumps(exc.body, default=str)
+    hdrs = {}
+    try:
+        hdrs = {h: resp.headers[h] for h in _ID_HEADERS if resp is not None and h in resp.headers}
+    except Exception:
+        hdrs = {}
+    if not text and not hdrs:
+        return None
+    out = (text or "(empty body)")[:4000]
+    return out + (f"\n[headers] {json.dumps(hdrs)}" if hdrs else "")
 
 
 def classify(exc: Exception) -> BackendError:
@@ -79,7 +108,9 @@ def classify(exc: Exception) -> BackendError:
             kind = "not_found"
         else:
             kind = "bad_request"
-        return BackendError(kind, f"HTTP {st}: {exc}"[:2000], st)
+        body = _response_body(exc)
+        short = f" | body: {body[:500]}" if body and body[:500] not in str(exc) else ""
+        return BackendError(kind, f"HTTP {st}: {exc}{short}"[:2000], st, body)
     return BackendError("bad_response", f"{type(exc).__name__}: {exc}"[:2000])
 
 
@@ -290,9 +321,9 @@ class OpenAICompatModel:
     def _redact(self, err: BackendError) -> BackendError:
         """Never let the API key reach meta.json, messages or logs through an error text."""
         key = self._api_key
-        if key and key != "none" and key in str(err):
-            red = BackendError(err.kind, str(err).replace(key, "<redacted>").split("] ", 1)[-1], err.status)
-            return red
+        if key and key != "none" and (key in str(err) or key in (err.body or "")):
+            return BackendError(err.kind, str(err).replace(key, "<redacted>").split("] ", 1)[-1], err.status,
+                                (err.body or "").replace(key, "<redacted>") or None)
         return err
 
     def worst_turn_cost(self, kw: dict) -> float:

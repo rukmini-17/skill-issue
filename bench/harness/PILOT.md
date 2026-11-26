@@ -199,6 +199,9 @@ tool calls; prices, which include prefill, in models.yaml and NOTES.md "Tinker p
 . ~/.tinker_key
 .venv/bin/python bench/harness/scripts/tinker_smoke.py --model qwen3.6-35b-a3b-tinker
 .venv/bin/python bench/harness/scripts/tinker_smoke.py --model qwen3.8-27b-tinker
+# if the pilot's first call is rejected (job 3444: HTTP 422), find the field (< $0.01):
+.venv/bin/python bench/harness/scripts/tinker_smoke.py --model qwen3.6-35b-a3b-tinker --pilot-request \
+    --dump runs/tinker/pilot_request.json
 unset TINKER_API_KEY
 # CPU-only COOK job: explicit-v2, d9, 55 runs, 4 workers, hard cap MAX_COST_USD (default 5)
 MAX_COST_USD=0.5 TASKS=ops-office-t05 sh bench/harness/scripts/cook_submit.sh tinker-pilot qwen3.6-35b-a3b-tinker

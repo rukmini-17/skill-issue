@@ -463,6 +463,39 @@ Checkpoint 4 (reference replay) is a joint A+B step and was skipped for now.
 
   Thinking-heavy models can cost more; the $5 cap bounds it.
 
+### Tinker 422 on the first pilot request (job 3444, Qwen3.6-35B-A3B, explicit, d9)
+
+- **What happened:**
+  - The environment and the key-leak check were OK, and $0 was spent.
+  - The first model call failed with `BackendError: [bad_request] HTTP 422: Error code: 422`.
+    The server's message was not captured, because the openai client puts only a parsed
+    OpenAI-style `error` into the exception text.
+  - The smoke test with the same model succeeded. Its request had one tool, max_tokens 1024,
+    no seed and `parallel_tool_calls: false`.
+- **Fix 1 (error bodies):** `BackendError.body` now holds the HTTP response body for any status
+  error (up to 4000 chars, plus content-type and request-id headers). It is recorded as
+  `meta.json` `agent_error_body`, appended to the error line, and printed in the job log's
+  progress record. Only the API key is redacted from it.
+- **Fix 2 (finding the field):** `tinker_smoke.py --pilot-request` (`bench.harness.request_probe`)
+  sends the harness's real first request, then one-change variants, and prints each error
+  body.
+  - The real first request is: the system prompt with the repo's skill list, the explicit-v2
+    task prompt, all 5 tool schemas, d9 max_tokens 8192, seed 0 for r0,
+    `parallel_tool_calls: false` and `tool_choice: auto`.
+  - Variants are at max_tokens 16, and each one changes one thing:
+    - no seed, no parallel_tool_calls, no tool_choice, no temperature;
+    - each tool dropped;
+    - `http_request` without `headers`;
+    - no `additionalProperties`;
+    - a short system prompt, or no system message;
+    - only the smoke test's `get_time` tool.
+  - It stops at the first accepted variant. Rejected requests cost nothing; the exact
+    request could cost up to $0.012 if it is accepted, and each variant about $0.001. Hard
+    cap $0.02.
+- **Suspects**, from what differs from the smoke request: `seed`, which the pilot sends
+  (the repeat number) and the smoke test did not; max_tokens 8192; the `headers` object with
+  `additionalProperties`; the long system prompt.
+
 ## COOK and Tinker facts (2026-11-25)
 
 **Multi-GPU on gtx (TA's quick guide, 2026-11-26).**

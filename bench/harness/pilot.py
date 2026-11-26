@@ -197,6 +197,8 @@ def cmd_run(a) -> int:
                "agent_error_kind": meta.get("agent_error_kind"), "harness_error": meta.get("harness_error"),
                "host": (meta.get("host") or {}).get("hostname"), "job": os.environ.get("SLURM_JOB_ID"),
                "cost_usd": meta.get("cost_usd"),
+               "agent_error": (meta.get("agent_error") or "")[:300] or None,
+               "agent_error_body": (meta.get("agent_error_body") or "")[:800] or None,
                "job_spent_usd": round(budget.spent, 4) if budget is not None else None,
                "time": time.strftime("%Y-%m-%dT%H:%M:%S")}
         with progress.open("a") as fh:

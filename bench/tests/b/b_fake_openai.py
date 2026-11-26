@@ -5,7 +5,7 @@ reply is one of:
 
 * a message dict (``{"role": "assistant", "content": ..., "tool_calls": [...]}``),
   returned as a normal completion (``finish_reason`` from ``_finish`` if present);
-* ``Err(status, message)``, returned as an OpenAI-style error body;
+* ``Err(status, message)``, returned as an OpenAI-style error body (``body=`` sends a raw one);
 * ``Raw(text)``, returned as is with status 200 (broken responses);
 * a callable ``(request_json) -> reply``, for replies that depend on the request.
 
@@ -26,6 +26,7 @@ from dataclasses import dataclass
 class Err:
     status: int
     message: str = "error"
+    body: str | None = None          # raw body instead of the OpenAI-style error JSON
 
 
 @dataclass
@@ -72,7 +73,9 @@ class FakeOpenAI:
                 r = fake.replies.pop(0) if fake.replies else {"role": "assistant", "content": "done"}
                 if callable(r):
                     r = r(req)
-                if isinstance(r, Err):
+                if isinstance(r, Err) and r.body is not None:
+                    self._send(r.status, r.body, "text/plain" if not r.body.startswith("{") else "application/json")
+                elif isinstance(r, Err):
                     self._send(r.status, json.dumps({"error": {"message": r.message, "type": "x", "code": r.status}}))
                 elif isinstance(r, Raw):
                     self._send(200, r.text)
