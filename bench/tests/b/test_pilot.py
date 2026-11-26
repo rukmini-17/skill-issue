@@ -235,8 +235,8 @@ def test_report_lines_and_skill_check_job(tmp_path, capsys):
     assert pilot.main(["report", "--root", str(root), "--root", str(other), "--model", "q14", "--timing"]) == 0
     out = capsys.readouterr().out
     assert "q32" not in out and "| q14 | ops-office-t01 r0 |" in out and "4 completed runs" in out
-    assert "| done | 3 | 10 | - | 50 | 50 | 17 | 3 | None |" in out      # no model_s in the fake meta
-    assert "| q14+explicit-v2 | 3 | 3.0 | 10 | - | 50 | 17 | 3 | done 3 |" in out
+    assert "| done | 3 | 10 | - | 50 | 50 | 17 | 3 | - | None | 0 | - |" in out   # no model_s/host in the fake
+    assert "| q14+explicit-v2 | 3 | 3.0 | 10 | - | 50 | 17 | 3 | 0 | 0 (0) | done 3 |" in out
     assert pilot.main(["report", "--root", str(root), "--root", str(other), "--model", "q14",
                        "--timing", "--common-tasks"]) == 0
     out = capsys.readouterr().out
@@ -249,3 +249,50 @@ def test_report_lines_and_skill_check_job(tmp_path, capsys):
     assert '--model "$MODEL" --timing' in sb
     assert "skill-check)" in (ROOT / "bench/harness/scripts/cook_submit.sh").read_text()
     assert '--invocation "${INVOCATION:-natural}"' in (ROOT / "bench/harness/slurm/first_run_t05.sbatch").read_text()
+
+
+def test_report_flags_slow_and_truncated_runs(tmp_path, capsys):
+    """Natural 8B pilot: runs at ~1 tok/s (sick node) and runs ended by a 4096-token turn."""
+    root = tmp_path / "p"
+    _fake_run(root, "q8", "ops-office-t08", 0, False, False)
+    _fake_run(root, "q8", "ops-office-t12", 2, False, False)
+    m1 = root / "q8/ops-office-t08/r0/meta.json"
+    meta = json.loads(m1.read_text())
+    meta.update(timings={"agent_s": 1040.0, "model_s": 1040.0}, host={"hostname": "cook033"},
+                usage={"prompt_tokens": 5639, "completion_tokens": 1393})
+    m1.write_text(json.dumps(meta))
+    m2 = root / "q8/ops-office-t12/r2/meta.json"
+    meta = json.loads(m2.read_text())
+    meta.update(steps=1, truncated_turns=1, timings={"agent_s": 141.0, "model_s": 141.0},
+                usage={"prompt_tokens": 1551, "completion_tokens": 4096},
+                turns=[{"step": 1, "tool_calls": [], "finish_reason": "length", "completion_tokens": 4096}])
+    m2.write_text(json.dumps(meta))
+    assert pilot.main(["report", "--root", str(root), "--timing"]) == 0
+    out = capsys.readouterr().out
+    assert "| 1.3 | None | 0 | cook033 |" in out and "| 29.0 | None | 1 end | - |" in out
+    assert "| 1 | 1 (1) | done 2 |" in out
+
+
+def test_set_aside_moves_only_error_runs(tmp_path, capsys):
+    root = tmp_path / "pilot"
+    _fake_run(root, "q8", "ops-office-t04", 0, False, False, end="error", kind="timeout")
+    _fake_run(root, "q8", "ops-office-t05", 0, False, False, end="timeout")
+    _fake_run(root, "q8", "ops-office-t06", 0, True, False)
+    _fake_run(root, "q14", "ops-office-t04", 0, False, False, end="error", kind="timeout")
+    hd = root / "q8/ops-office-t07/r0"
+    _fake_run(root, "q8", "ops-office-t07", 0, False, False, end="error")
+    meta = json.loads((hd / "meta.json").read_text())
+    meta["harness_error"] = "boom"                       # already incomplete: leave it
+    (hd / "meta.json").write_text(json.dumps(meta))
+    assert pilot.main(["set-aside", "--root", str(root), "--model", "q8", "--dry-run"]) == 0
+    assert "1 run(s) to move" in capsys.readouterr().out
+    assert (root / "q8/ops-office-t04/r0").is_dir()
+    assert pilot.main(["set-aside", "--root", str(root), "--model", "q8"]) == 0
+    assert "1 run(s) moved" in capsys.readouterr().out
+    assert not (root / "q8/ops-office-t04/r0").exists()
+    for kept in ("q8/ops-office-t05/r0", "q8/ops-office-t06/r0", "q14/ops-office-t04/r0", "q8/ops-office-t07/r0"):
+        assert (root / kept).is_dir()
+    moved = list((tmp_path / "pilot_set_aside").glob("*/q8/ops-office-t04/r0/meta.json"))
+    assert len(moved) == 1 and not pilot.is_complete(root / "q8/ops-office-t04/r0")
+    sb = (ROOT / "bench/harness/slurm/pilot_cook.sbatch").read_text()
+    assert 'RETRY="--retry-agent-errors"' in sb and "$RETRY" in sb

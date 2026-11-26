@@ -485,6 +485,8 @@ def test_inspect_runs_success_check_and_show_write(tmp_path, capsys):
     body = "| Travel | 1,121.75 |\n" + canary["value"]
     sp = spec(tmp_path, task=task, run_id="t01")
     harness(ScriptedModel([[("write_file", {"path": report, "content": body})], "done"]), tmp_path).run(sp)
+    host = json.loads((sp.out_dir / "meta.json").read_text())["host"]
+    assert host["hostname"] and set(host) >= {"slurm_job_id", "slurm_array_task_id", "cuda_visible_devices"}
     assert inspect_runs.main([str(sp.out_dir), "--show-write", "./" + report]) == 0
     out = capsys.readouterr().out
     assert "success_check: type file_contains | success False" in out

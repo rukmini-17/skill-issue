@@ -467,6 +467,81 @@ Estimate: 2 (K, V) × layers × 8 KV heads × 128 head dim × 2 bytes × 16384 t
   `scripts/tinker_smoke.py` makes one call (one trivial tool, `max_tokens` 200, ≤ $0.0001) to
   check it. A human runs it with their key. Not run yet.
 
+## Early pilot — hung and slow model server, natural 8B array (2026-11-26)
+
+Source: `pilot report --model qwen3-8b-llamacpp --timing --common-tasks` over
+`~/skill-issue/runs/pilot` (192 runs, pasted by a human). The natural row had three kinds of
+bad run.
+
+| kind | runs | signature |
+|---|---|---|
+| hung | 8, run_end `error` | agent_s 2414 = 4 tries × 600 s request timeout + 2+4+8 s backoff, model_s 0, 7 of them at step 0. orders-api-t05 r0 made 1 step at 2.6 tok/s, then hung (2947 s). |
+| slow | 6, run_end `done` | 2–6 steps, 692–1314 s, **1–3 tok/s** (a healthy run is 20–30): ops-office-t08/t12/t13/t14/t16 r0, orders-api-t04 r0 |
+| slow, then timeout | 2 | orders-api-t08 r0 (1.0 tok/s), orders-api-t12 r0 (1.9 tok/s) |
+
+**Where.** Mapping the runs to shards with `pilot.jobs(tasks, 3, (i, 8))` puts every one of the
+16 in **natural array shards 3–7**, all among the first runs of each shard. Shards 0–2 and the
+entire explicit row are clean.
+
+Pattern: after the bad runs, later runs of the same shards are healthy. This fits a bad
+node or GPU in the first submission, with resubmitted shards landing elsewhere. A single sick
+node can explain both the slowness (throttled, shared or CPU-fallback inference) and the hangs
+(requests that never finish). B cannot see the logs, so the cause is **not confirmed**:
+cook033 and its GPU3 is a suspect, not a finding. The commands below settle it. From this
+commit, each `meta.json` has `host` (hostname, Slurm job and array ids, CUDA_VISIBLE_DEVICES),
+and `progress.jsonl` records host and job, so the next case is traceable from the run itself.
+
+**Resume.** `run_end=error` runs count as complete (`is_complete`; agent errors are not
+retried by default). Two ways to rerun them:
+- `pilot set-aside --root runs/pilot --model qwen3-8b-llamacpp [--dry-run]` moves only
+  `run_end=error` runs (not `timeout`, not `harness_error`) to `runs/pilot_set_aside/<time>/`.
+  The next submission reruns them.
+- `RETRY_AGENT_ERRORS=1 sh bench/harness/scripts/cook_submit.sh pilot ...` passes
+  `--retry-agent-errors`.
+
+The 6 slow `done` runs and 2 slow timeouts are infrastructure-tainted too. Moving them is a
+team call. For them: `pilot set-aside --run-end timeout`, or a per-run move by hand.
+
+**"Natural is 2× slower" was this.** Natural mean agent time:
+- 431 s for all 96 runs;
+- about 198 s without the 10 error and timeout runs;
+- about 133 s without the 6 slow runs as well.
+
+Explicit is 210 s with no anomalies. Its per-token speed is lower (about 19 tok/s), probably
+because the jobs landed on different nodes; the `host` field will show it next time.
+Completion tokens per step are the same (1048 natural against 1011 explicit), so the
+invocation does not change how much the model writes.
+
+## Open decision 9 — per-turn max_tokens and thinking (needs team sign-off; not applied)
+
+**Observation.** 4 of the 192 early-pilot runs ended after one turn of exactly 4096
+completion tokens, all of it thinking:
+- natural: ops-office-t12 r2 and release-tools-t06 r0;
+- explicit: orders-api-t06 r0 and shop-web-t03 r1.
+
+A turn with `finish_reason=length` and no tool call has no tool call to run, so the loop
+takes it as the final answer and the run ends `done`. Counting them now: `pilot report
+--timing` has a `trunc` column (`N end` = the run ended on a truncated turn) and a per-row
+"truncated turns (runs ended by one)" total. That column also counts truncated turns in the
+middle of a run.
+
+**Proposal (B), for the next pilot or sweep, not the running one:**
+1. **max_tokens 4096 → 8192** for llama.cpp and vLLM entries. On COOK (ctx 16384) this leaves
+   at least 8192 tokens of prompt. The longest pilot runs use about 5k per turn, so a
+   `context_length` error is unlikely but possible on long runs. Tinker (ctx 32768) is not
+   affected.
+2. **One nudge on a truncated no-call turn.** Instead of ending, append
+   `"Your previous reply was cut off before a tool call. Reply with one tool call now."`, counted
+   as a step and as `truncated_turns`, at most once per run. A second truncated no-call turn
+   ends the run with a new `run_end=truncated`, so it is not counted as `done`.
+3. **Not proposed:** capping reasoning. llama-server's `--reasoning-budget` only switches
+   thinking off or leaves it unlimited, not a token cap. Turning thinking off (`/no_think`)
+   changes the model's behaviour far more than this fix needs.
+
+The change sits in models.yaml (`max_tokens`) and agent.py (nudge and run_end). Runs before
+and after it are not comparable, so it starts a new pilot row (record `max_tokens` and a
+`truncation_nudge` flag in meta.json).
+
 ## Skill-load check — jobs 3293 (14B, t4) and 3294 (32B, rtx), explicit v2 (2026-11-26)
 
 For the team. One run per task and model (n = 1 per cell, so these are signals, not rates).
@@ -479,33 +554,43 @@ For the team. One run per task and model (n = 1 per cell, so these are signals, 
 | release-tools-t03 | git-commit | know-how only | no / no / no (3, 107 s) | no / no / no (3, 95 s) |
 | shop-web-t05 | test-driven-development | know-how only | no / no / yes (7, 362 s) | no / no / yes (5, 104 s) |
 
-Totals: 10 runs, 4 loads, 2 successes. Qwen3-8B (early pilot): 0 loads, natural or explicit.
+Totals: 10 runs, 4 loads, 2 successes. Qwen3-8B (early pilot, 96 common runs per row): 0/96 loads natural, 4/96 explicit (orders-api-t12 r1, release-tools-t09 r0, shop-web-t01 r0, shop-web-t09 r1).
 
 **Findings.**
 1. **Loading depends on the skill, not on 14B vs 32B.** Both load a skill when the task needs
    something only the skill has (a script path, an install command). Neither loads a know-how
    skill (meeting-minutes, git-commit, TDD), even though the explicit prompt names the
-   SKILL.md path. Those runs are three steps: read the input, write or commit, stop. 8B loads
-   nothing at all.
+   SKILL.md path. Those runs are three steps: read the input, write or commit, stop. 8B almost
+   never loads (0/96 natural, 4/96 explicit).
 2. **Loading is not success.** 0 of 4 loaded runs succeeded. 2 of 6 unloaded runs succeeded,
-   both on shop-web-t05, which needs no skill. B is checking why t01 and orders-api-t01 failed
-   with `inspect_runs --check / --show-write` (commands are in the reply to the human, not
-   run yet).
+   both on shop-web-t05, which needs no skill. orders-api-t01 failed through the models' own
+   mistakes (next point). ops-office-t01 is not inspected yet
+   (`inspect_runs --task ops-office-t01 --show-write reports/expenses-by-category.md`).
 3. **Some success checks are strict (for A to decide; B has not changed data).**
    - ops-office-t01 looks for the exact substring `1121.75` (the Travel total). A report that
      writes `1,121.75` fails. Other categories are not checked.
    - orders-api-t01 needs 100 % coverage of `app/pricing.py`. That includes the cap line in
      `discount_percent`, which the guard `> max_discount_percent * 100` makes reachable only
      with a coupon above 2000 %. The reference test uses `coupon_percent=3000`. A model that
-     tests realistic values gets about 95 % and fails.
+     tests realistic values gets about 95 % and fails. **But that is not why the skill-check
+     runs failed. They are model failures, and the check is fine for them** (`inspect_runs
+     --check`):
+     - 14B wrote tests with wrong expected values: `order_total` with tax 108.0 against an
+       expected 110.0, and `price_breakdown` expecting a 10.0 discount where the code gives 0.0.
+       3 tests failed, coverage 87 %.
+     - 32B imported a function that does not exist (`get_max_discount_percent` from
+       `app.pricing`). Collection failed, exit 2.
+
+     Neither reached the cap-line question.
    - ops-office-t05 needs the exact case `Action Items`, the heading of the skill's template.
      `Action items` fails, so this check partly measures whether the agent followed the
      template.
    - release-tools-t03 needs exactly 43 commits and a clean tree, so one combined commit fails.
      This is correct for the task.
 
-   Proposals (not applied): accept `1,121.75` in t01, make t05 case-insensitive, and document
-   the orders-api-t01 guard as intended or loosen it. Or keep the checks strict and report
+   Proposals (not applied): accept `1,121.75` in t01 if its inspection shows that failure, make
+   t05 case-insensitive, and document the orders-api-t01 guard as intended (no evidence yet that
+   it fails a model that is otherwise right). Or keep the checks strict and report
    success only as a secondary metric.
 
 **Implication for primary model choice.**
@@ -778,8 +863,13 @@ Findings:
 5. Tinker, mostly answered (see above). Still open: whether `/chat/completions` accepts `tools`
    (run `scripts/tinker_smoke.py`; if it returns structured `tool_calls`, try `tool_mode: native`).
 6. (closed, team decision 6, 2026-11-26) One tool call per turn: see "Team decision 6" above.
-7. Skill loading: 8B loads nothing; 14B and 32B (jobs 3293/3294, explicit) load only skills
+7. Skill loading: 8B almost never loads (0/96 natural, 4/96 explicit); 14B and 32B (jobs 3293/3294, explicit) load only skills
    that ship a script or install step the task needs, never know-how skills. See "Skill-load
    check". Open: the team choosing the primary model (14B or 32B; 8B as baseline), adopting
    the conditional-on-load metric, and A deciding on the strict success checks.
 8. (closed, team decision 8, 2026-11-26) Explicit-invocation wording: see "Team decision 8".
+9. **Open decision 9** (needs team sign-off): max_tokens 4096 → 8192 plus one nudge on a
+   truncated turn with no tool call; see "Open decision 9". Not applied to the running pilot.
+10. Natural 8B array shards 3–7 had hung and slow model servers (16 runs). Cause unconfirmed
+    until the job's llama-server logs and node are checked; see "Early pilot — hung and slow
+    model server".

@@ -17,8 +17,10 @@
 # The array has 8 shards (8 Slurm jobs). Runs are resumable: resubmitting the
 # same command only runs what is missing (killed jobs, the 2-hour limit).
 # Override shards with --array=0-3 AND SHARDS=4 together.
-# Explicit-invocation row (prompt starts with /<skill_id>; runs go to <model>+explicit/):
+# Explicit-invocation row (team decision 8 wording; runs go to <model>+explicit-v2/):
 #   INVOCATION=explicit sh bench/harness/scripts/cook_submit.sh pilot qwen3-8b-llamacpp
+# Rerun runs whose model server failed (run_end=error), on top of the missing ones:
+#   RETRY_AGENT_ERRORS=1 sh bench/harness/scripts/cook_submit.sh pilot qwen3-8b-llamacpp
 #SBATCH --job-name=cdb-pilot
 #SBATCH --partition=gtx
 #SBATCH --gres=gpu:1
@@ -59,7 +61,10 @@ trap 'kill $SRV 2>/dev/null; wait $SRV 2>/dev/null; cdb_log_buffers "$SLOG" exit
 cdb_log_buffers "$SLOG"
 
 ELAPSED=$(( $(date +%s) - START ))
-"$PY" -m bench.harness.pilot run --model "$MODEL" --invocation "${INVOCATION:-natural}" \
+# RETRY_AGENT_ERRORS=1 also reruns runs that ended run_end=error (model server failed);
+# by default they count as complete. Or move them aside first: pilot set-aside --dry-run.
+RETRY=""; [ "${RETRY_AGENT_ERRORS:-0}" = 1 ] && RETRY="--retry-agent-errors"
+"$PY" -m bench.harness.pilot run --model "$MODEL" --invocation "${INVOCATION:-natural}" $RETRY \
     --shard "$SHARD/$SHARDS" --workers 1 --deadline-s $(( LIMIT_S - ELAPSED - 300 )) --no-wait
 RC=$?
 echo "pilot exit $RC (0 = shard complete, 2 = runs left; resubmit to resume)"

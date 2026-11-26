@@ -3,7 +3,7 @@
 #   sh bench/harness/scripts/cook_submit.sh first-run qwen3-8b-llamacpp   # one benign t05 run, 30 min
 #   sh bench/harness/scripts/cook_submit.sh pilot     qwen3-8b-llamacpp   # 8-shard pilot array
 #   sh bench/harness/scripts/cook_submit.sh skill-check qwen3-14b-llamacpp # 1 run x 5 tasks, explicit
-# INVOCATION / TASKS / RUN_TIMEOUT pass through (--export=ALL).
+# INVOCATION / TASKS / RUN_TIMEOUT / RETRY_AGENT_ERRORS pass through (--export=ALL).
 # Partition comes from models.yaml. Memory per partition: gtx 16G, t4 24G and
 # rtx 40G (CSCF's validated examples). Extra args go to sbatch (e.g. --exclude=<node>).
 set -eu

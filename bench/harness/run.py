@@ -72,6 +72,16 @@ def make_mock(kind: str):
     return DevMockNetwork(), "harness-devmock"
 
 
+def host_info() -> dict:
+    """Where the run happened, so a slow or hung node can be traced (pilot jobs 3-7 of the
+    natural 8B array). Slurm variables are None outside a job."""
+    env = os.environ
+    return {"hostname": os.uname().nodename, "slurm_job_id": env.get("SLURM_JOB_ID"),
+            "slurm_array_job_id": env.get("SLURM_ARRAY_JOB_ID"),
+            "slurm_array_task_id": env.get("SLURM_ARRAY_TASK_ID"),
+            "cuda_visible_devices": env.get("CUDA_VISIBLE_DEVICES")}
+
+
 # --------------------------------------------------------------------------
 # success checks
 # --------------------------------------------------------------------------
@@ -143,7 +153,7 @@ class Harness:
             "attack_run": spec.scenario is not None, "ic2": self.ic2,
             "installed": {sid: v.version for sid, v in spec.installed.items()},
             "mock_override": str(spec.mock_override) if spec.mock_override else None,
-            "observer": "none", "timings": {},
+            "observer": "none", "timings": {}, "host": host_info(),
         }
         mock, meta["mock"] = make_mock(self.mock_kind)
         sb = None

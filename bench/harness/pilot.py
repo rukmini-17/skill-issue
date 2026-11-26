@@ -26,6 +26,8 @@ import csv
 import io
 import json
 import math
+import os
+import shutil
 import statistics
 import sys
 import time
@@ -169,6 +171,7 @@ def cmd_run(a) -> int:
         rec = {"task_id": t.task_id, "repeat": r, "invocation": a.invocation, "shard": a.shard, "seconds": round(time.monotonic() - t0, 1),
                "run_end": meta.get("run_end"), "success": (meta.get("success") or {}).get("success"),
                "agent_error_kind": meta.get("agent_error_kind"), "harness_error": meta.get("harness_error"),
+               "host": (meta.get("host") or {}).get("hostname"), "job": os.environ.get("SLURM_JOB_ID"),
                "time": time.strftime("%Y-%m-%dT%H:%M:%S")}
         with progress.open("a") as fh:
             fh.write(json.dumps(rec) + "\n")
@@ -243,6 +246,10 @@ def collect(root: Path) -> list[dict]:
             "prompt_tokens": (m.get("usage") or {}).get("prompt_tokens"),
             "completion_tokens": (m.get("usage") or {}).get("completion_tokens"),
             "reasoning_chars": (m.get("behaviour") or {}).get("reasoning_chars"),
+            # the last turn hit max_tokens and had no tool call, so the loop took it as the answer
+            "ended_by_length": bool((m.get("turns") or [{}])[-1].get("finish_reason") == "length"
+                                    and not (m.get("turns") or [{}])[-1].get("tool_calls")),
+            "host": (m.get("host") or {}).get("hostname"),
             # behaviour (None for runs recorded before meta.json had "behaviour")
             "multi_call_turns": (m.get("behaviour") or {}).get("multi_call_turns"),
             "blind_write_turns": (m.get("behaviour") or {}).get("blind_write_turns"),
@@ -366,13 +373,20 @@ def _per(a, b):
     return a / b if a is not None and b else None
 
 
+def _rate1(r: dict) -> str:
+    """completion tokens per model second: about 20-30 on a healthy gtx node for 8B."""
+    v = _per(r["completion_tokens"], r["model_s"])
+    return f"{v:.1f}" if v is not None else "-"
+
+
 def cmd_report(a) -> int:
     """One line per run (skill-load checks): task, row, skill_load, skill_used, success, run_end.
     ``--timing`` adds where the time went (model seconds, tokens, reasoning) and a per-row mean."""
     rows = _report_rows(a)
     head = "| row | task | skill | invocation | skill_load | skill_used | success | run_end | steps | agent s |"
     if a.timing:
-        head += " model s | prompt tok | compl tok | compl tok/step | s/step | reasoning chars |"
+        head += (" model s | prompt tok | compl tok | compl tok/step | s/step | tok/s | reasoning chars |"
+                 " trunc | host |")
     print(head)
     print("|---" * (head.count("|") - 1) + "|")
     for r in sorted(rows, key=lambda r: (r["model"], r["task_id"], r["repeat"])):
@@ -382,7 +396,8 @@ def cmd_report(a) -> int:
         if a.timing:
             line += (f" {_mean([r['model_s']])} | {r['prompt_tokens']} | {r['completion_tokens']} | "
                      f"{_mean([_per(r['completion_tokens'], r['steps'])])} | "
-                     f"{_mean([_per(r['agent_s'], r['steps'])])} | {r['reasoning_chars']} |")
+                     f"{_mean([_per(r['agent_s'], r['steps'])])} | {_rate1(r)} | {r['reasoning_chars']} | "
+                     f"{r['truncated_turns']}{' end' if r['ended_by_length'] else ''} | {r['host'] or '-'} |")
         print(line)
     done = [r for r in rows if r["complete"]]
     print(f"\n{len(done)} completed runs: skill_load {sum(bool(r['skill_loaded']) for r in done)}, "
@@ -390,8 +405,9 @@ def cmd_report(a) -> int:
           f"success {sum(r['success'] is True for r in done)}")
     if a.timing:
         print("\n| row | runs | mean steps | mean agent s | mean model s | mean compl tok | "
-              "mean compl tok/step | mean s/step | run_end |")
-        print("|---|---|---|---|---|---|---|---|---|")
+              "mean compl tok/step | mean s/step | runs < 5 tok/s | truncated turns (runs ended by one) | "
+              "run_end |")
+        print("|---|---|---|---|---|---|---|---|---|---|---|")
         for label in sorted({r["model"] for r in done}):
             g = [r for r in done if r["model"] == label]
             ends = Counter(r["run_end"] for r in g)
@@ -400,7 +416,37 @@ def cmd_report(a) -> int:
                   f"{_mean(r['completion_tokens'] for r in g)} | "
                   f"{_mean(_per(r['completion_tokens'], r['steps']) for r in g)} | "
                   f"{_mean(_per(r['agent_s'], r['steps']) for r in g)} | "
+                  f"{sum((_per(r['completion_tokens'], r['model_s']) or 99) < 5 for r in g)} | "
+                  f"{sum(r['truncated_turns'] for r in g)} ({sum(r['ended_by_length'] for r in g)}) | "
                   f"{', '.join(f'{k} {v}' for k, v in sorted(ends.items(), key=str))} |")
+    return 0
+
+
+def cmd_set_aside(a) -> int:
+    """Move runs with the given run_end (default: error, i.e. the model server failed) out of
+    the pilot root, so the next submission reruns them. Moved, not deleted: they land in
+    ``<root>_set_aside/<timestamp>/`` with the same layout."""
+    root = a.root
+    dest = root.parent / f"{root.name}_set_aside" / time.strftime("%Y%m%d-%H%M%S")
+    ends = set(a.run_end.split(","))
+    n = 0
+    for meta_p in sorted(root.glob("*/*/r*/meta.json")):
+        m = read_meta(meta_p.parent)
+        if not m or m.get("harness_error") or m.get("run_end") not in ends:
+            continue
+        label = meta_p.parents[2].name
+        if a.model and not (label == a.model or label.startswith(a.model + "+")):
+            continue
+        d = meta_p.parent
+        target = dest / d.relative_to(root)
+        print(f"{'would move' if a.dry_run else 'moved'} {d} -> {target} "
+              f"(run_end {m.get('run_end')}, {m.get('agent_error_kind')}, steps {m.get('steps')}, "
+              f"host {(m.get('host') or {}).get('hostname', '?')})")
+        if not a.dry_run:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(d), str(target))
+        n += 1
+    print(f"{n} run(s) {'to move' if a.dry_run else 'moved'}; resubmit the same pilot job to rerun them")
     return 0
 
 
@@ -467,7 +513,14 @@ def main(argv: list[str] | None = None) -> int:
                     help="add model s, tokens, s/step, reasoning chars and a per-row mean table")
     rp.add_argument("--common-tasks", action="store_true",
                     help="keep only (task, repeat) pairs that every row completed (fair row means)")
+    sa = sub.add_parser("set-aside", help="move error runs out of the root so a resubmit reruns them")
+    sa.add_argument("--root", type=Path, default=PILOT_ROOT)
+    sa.add_argument("--run-end", default="error", help="comma-separated run_end values (default: error)")
+    sa.add_argument("--model", default="", help="only this model's rows (natural and explicit)")
+    sa.add_argument("--dry-run", action="store_true")
     a = ap.parse_args(argv)
+    if a.cmd == "set-aside":
+        return cmd_set_aside(a)
     if a.cmd == "report":
         return cmd_report(a)
     if a.cmd == "run":

@@ -139,7 +139,50 @@ logs in `runs/pilot/logs/`.
 
 | machine | model | backend | launched by | date | job ids / log | git sha |
 |---|---|---|---|---|---|---|
-| | | | | | | |
+| COOK gtx (GTX 1080 Ti) | qwen3-8b-llamacpp (natural, explicit-v2) | llama.cpp Q4_K_M | human | 2026-11-26 | runs/pilot/logs/ (fill in job ids) | c7801d0 |
+
+### First results — Qwen3-8B, COOK gtx, early pilot (2026-11-26, c7801d0)
+
+These are hand-counted from `pilot report --model qwen3-8b-llamacpp --timing --common-tasks` over
+`~/skill-issue/runs/pilot`. The natural and explicit-v2 rows cover the same 96 (task, repeat)
+pairs out of 165 per row, so the pilot is not finished. Success uses each task's
+`success_check`, and the oracle is not run. Intervals are 95 % Wilson intervals. Runs of one
+task are not independent.
+
+| row | runs | success | skill_load | skill_used | run_end |
+|---|---|---|---|---|---|
+| qwen3-8b-llamacpp (natural) | 96 | 40/96 = 42 % [32, 52] | 0/96 [0, 4] | 9/96 = 9 % [5, 17] | done 86, error 8, timeout 2 |
+| qwen3-8b-llamacpp+explicit-v2 | 96 | 49/96 = 51 % [41, 61] | 4/96 = 4 % [2, 10] | 15/96 = 16 % [10, 24] | done 96 |
+
+Success per repo, natural / explicit: ops-office 14/36 / 20/36, orders-api 6/23 / 6/23,
+release-tools 5/16 / 7/16, shop-web 15/21 / 16/21.
+
+- **Skill loading.** Natural never reads SKILL.md. Explicit reads it in 4 runs: orders-api-t12
+  r1, release-tools-t09 r0, shop-web-t01 r0 and shop-web-t09 r1. Every natural skill use is the
+  ops-office convert-excel-to-md or datanalysis-credit-risk scripts (t01–t04). Explicit adds
+  orders-api-t02 r1 and the 4 loads.
+- **Explicit vs natural success** (+9 points) is within the intervals. It is also partly
+  infrastructure: all 10 of the natural row's error and timeout runs are infrastructure-tainted
+  (next point). Over natural runs that ended `done`, success is 39/86 = 45 % [35, 56].
+
+**Infrastructure caveats (see NOTES.md, "Early pilot — hung and slow model server").**
+- 8 natural runs ended `run_end=error` after 2414 s. That is 4 tries × the 600 s request
+  timeout plus backoff, so the model server never answered. Seven of them had 0 steps.
+- 6 natural runs that ended `done` were 10–30× slower than normal (1–3 tok/s against 20–30).
+- Both natural `timeout` runs were similarly slow (2499 s and 2011 s).
+- All of these are early runs of natural array shards 3–7. Shards 0–2 and the whole explicit
+  row are clean.
+- Error runs count as complete, so resubmitting does not rerun them. Use
+  `pilot set-aside --dry-run` then `pilot set-aside`, or `RETRY_AGENT_ERRORS=1`.
+- The earlier "natural is 2× slower" is this effect, not the invocation:
+  - natural mean agent time is 431 s with these runs and about 133 s without them;
+  - explicit is 210 s;
+  - explicit generated more slowly per token (about 19 tok/s), probably different nodes. From
+    this commit `meta.json` records the host and Slurm job.
+- 4 runs ended after one turn of exactly 4096 completion tokens (2 natural, 2 explicit): the
+  max_tokens limit was hit while thinking, and a turn with no tool call is taken as the final
+  answer. The fix is open decision 9 in NOTES.md and is not applied to this pilot.
+- ctx 16384 on COOK and Qwen3 thinking on, as in models.yaml at c7801d0.
 
 <!-- pilot:tables:begin -->
 _No runs yet._
