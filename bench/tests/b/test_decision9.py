@@ -161,3 +161,18 @@ def test_jobs_take_setup_and_run_timeout():
     assert "--array=0-9%6" in sb and "SHARDS=10" in sb
     assert '--setup "${SETUP:-d9}"' in (ROOT / "bench/harness/slurm/skill_check.sbatch").read_text()
     assert '--setup "${SETUP:-d9}"' in (ROOT / "bench/harness/slurm/first_run_t05.sbatch").read_text()
+
+
+def test_gtx4_entry_and_gpu_count_plumbing():
+    from bench.backends import make_model, model_config
+    c = model_config("qwen3-32b-llamacpp-gtx4")
+    rtx = model_config("qwen3-32b-llamacpp")
+    assert (c["partition"], c["gpus"], c["mem"], c["hardware"]) == ("gtx", 4, "32G", "cook-gtx-1080ti-x4")
+    assert c["model_file"] == rtx["model_file"] and c["server"]["ctx_size"] == 16384
+    cmd = " ".join(make_model("qwen3-32b-llamacpp-gtx4").server_command())
+    assert "-sm layer" in cmd and "-ngl 999" in cmd and "--flash-attn off" in cmd
+    sub = (ROOT / "bench/harness/scripts/cook_submit.sh").read_text()
+    assert '--gres=gpu:"$GPUS" --ntasks=1' in sub and 'CDB_GPUS="$GPUS"' in sub and 'get "$MODEL" mem' in sub
+    env = (ROOT / "bench/harness/slurm/cook_env.sh").read_text()
+    assert '--gres=gpu:"$CDB_GPUS"' in env and "need $CDB_GPUS GPUs" in env
+    assert "CDB_SERVER_VERBOSITY" in (ROOT / "bench/harness/slurm/skill_check.sbatch").read_text()

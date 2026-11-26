@@ -402,7 +402,7 @@ def test_shipped_models_yaml(monkeypatch):
     assert cands == {(b, s) for b in ("vllm", "llamacpp") for s in ("4b", "8b", "14b", "32b")}
     parts = {n: c["partition"] for n, c in cfg.items() if c["backend"] == "llamacpp"}
     assert parts == {"qwen3-4b-llamacpp": "gtx", "qwen3-8b-llamacpp": "gtx", "qwen3-14b-llamacpp": "t4",
-                     "qwen3-32b-llamacpp": "rtx"}
+                     "qwen3-32b-llamacpp": "rtx", "qwen3-32b-llamacpp-gtx4": "gtx"}
     for n, c in cfg.items():                                     # ctx recorded per entry
         assert make_model(n, env=env).describe()["ctx_size"] == (c.get("server") or {}).get("ctx_size"), n
         if c["backend"] == "llamacpp":
@@ -410,7 +410,7 @@ def test_shipped_models_yaml(monkeypatch):
             cmd = make_model(n, env={**env, "SLURM_CPUS_PER_TASK": "6"}).server_command()
             flags = {cmd[i]: cmd[i + 1] for i in range(len(cmd) - 1) if cmd[i].startswith("-")}
             assert {k: flags[k] for k in ("-ngl", "-sm", "--flash-attn", "-fit", "-b", "-ub", "-t", "-c")} == {
-                "-ngl": "999", "-sm": "none", "--flash-attn": "off", "-fit": "off", "-b": "128", "-ub": "128",
+                "-ngl": "999", "-sm": "layer" if c.get("gpus", 1) > 1 else "none", "--flash-attn": "off", "-fit": "off", "-b": "128", "-ub": "128",
                 "-t": "6", "-c": "16384"}, n                         # CSCF's validated COOK flags
             assert "--temp" not in cmd and "--top-k" not in cmd, n  # decoding stays in the request
             assert "-GGUF/" in c["model_file"] and c["model_file"].endswith("-Q4_K_M.gguf"), n

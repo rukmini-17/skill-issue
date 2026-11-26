@@ -159,7 +159,7 @@ def test_pilot_scripts_are_well_formed():
     env = (ROOT / "bench/harness/slurm/cook_env.sh").read_text()
     assert "llm-r580-llamacpp/2026.10" in env and "llm-r615-llamacpp/2026.11 python/3.13.15" in env
     assert ". /etc/profile" in env and "module purge" in env and "CUDA_VISIBLE_DEVICES:?" in env
-    assert "srun --ntasks=1 --gres=gpu:1" in env and "OMP_NUM_THREADS" in env and ".venv-r615" not in env
+    assert "srun --ntasks=1 --gres=gpu:\"$CDB_GPUS\"" in env and "OMP_NUM_THREADS" in env and ".venv-r615" not in env
     sub = (ROOT / "bench/harness/scripts/cook_submit.sh").read_text()
     assert "gtx) MEM=16G" in sub and "t4) MEM=24G" in sub and "rtx) MEM=40G" in sub
     for f in ("pilot_cook.sbatch", "first_run_t05.sbatch"):

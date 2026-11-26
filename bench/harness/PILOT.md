@@ -84,8 +84,19 @@ lists the 165 runs, and `.venv/bin/python -m bench.backends serve-cmd <model>` p
    ```sh
    sh bench/harness/scripts/cook_submit.sh skill-check qwen3-14b-llamacpp    # t4
    sh bench/harness/scripts/cook_submit.sh skill-check qwen3-32b-llamacpp    # rtx
+   CDB_SERVER_VERBOSITY=4 \
+     sh bench/harness/scripts/cook_submit.sh skill-check qwen3-32b-llamacpp-gtx4  # 4x gtx, -sm layer
    cat runs/skill_check/logs/cdb-skill-check-<jobid>.out                     # table at the end
    ```
+
+   `qwen3-32b-llamacpp-gtx4` is the same 32B GGUF split by layer over 4 GTX 1080 Ti on one
+   gtx node. cook_submit takes `gpus: 4` and `mem: 32G` from models.yaml, and asks for
+   `--gres=gpu:4 --ntasks=1 --mem=32G`. cook_env stops if Slurm gives fewer GPUs.
+   `CDB_SERVER_VERBOSITY=4` makes llama-server log the per-GPU offload and buffers. Check them in
+   the job log's "llama-server memory" block: buffers on CUDA0–CUDA3 and all 65 layers
+   offloaded. Compare speed with the `tok/s` and `s/step` columns of
+   `pilot report --root runs/skill_check --timing`. The rtx row ran pre-d9 (148 s per run);
+   tokens/s is the fair comparison.
 
    Default tasks: ops-office-t05, ops-office-t01, orders-api-t01, shop-web-t05,
    release-tools-t03. Override with `TASKS=a,b,c` and `INVOCATION=natural` in front of the

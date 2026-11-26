@@ -402,6 +402,18 @@ Checkpoint 4 (reference replay) is a joint A+B step and was skipped for now.
 
 ## COOK and Tinker facts (2026-11-25)
 
+**Multi-GPU on gtx (TA's quick guide, 2026-11-26).**
+- A gtx node can give one job 4 GPUs: `--gres=gpu:4 --ntasks=1`, with llama.cpp `-sm layer`.
+  The TA ran a 27B Q4 model on 4× GTX 1080 Ti at about 14 tok/s.
+- The models.yaml entry is `qwen3-32b-llamacpp-gtx4`: the same Qwen3-32B Q4_K_M GGUF as on
+  rtx, hardware `cook-gtx-1080ti-x4`, `gpus: 4`, `mem: 32G`, `-sm layer -ngl 999 -fa off`,
+  ctx 16384.
+- Memory estimate: 19.8 GB of weights, about 4.3 GB of KV (64 layers × 8 KV heads × 128 × 2 ×
+  f16 × 16384) and compute buffers, so about 26 GB of the 44 GB.
+- cook_submit now takes the GPU count and memory from models.yaml (`gpus`, default 1; `mem`,
+  default by partition), and cook_env checks the count. Speed is not measured yet: the
+  skill-check job, PILOT.md step 2b.
+
 Checked on the cluster by the team, and from the Tinker docs (Compatible APIs, Models &
 Pricing), and CSCF's example jobs printed by `scripts/cook_probe.sh` (2026-11-25). Applied to
 `bench/configs/models.yaml`, `slurm/cook_env.sh`, `slurm/pilot_cook.sbatch`,

@@ -33,27 +33,31 @@ else
   echo "node/npm not found in CDB_NODE_DIR=$CDB_NODE_DIR (install Node at ~/opt/node, see PILOT.md)"; exit 2
 fi
 set -u
-: "${CUDA_VISIBLE_DEVICES:?Slurm GPU assignment is missing (submit with --gres=gpu:1)}"
+CDB_GPUS="${CDB_GPUS:-1}"                   # GPUs the model needs (models.yaml `gpus`, via cook_submit.sh)
+: "${CUDA_VISIBLE_DEVICES:?Slurm GPU assignment is missing (submit with --gres=gpu:$CDB_GPUS)}"
+CDB_NGPU=$(echo "$CUDA_VISIBLE_DEVICES" | tr ',' '\n' | grep -c .)
+[ "$CDB_NGPU" -ge "$CDB_GPUS" ] \
+  || { echo "need $CDB_GPUS GPUs, Slurm gave $CDB_NGPU (CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES)"; exit 2; }
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-4}"
 PY="${PYTHON:-.venv/bin/python}"
 export LLAMA_SERVER="${LLAMA_SERVER:-$(command -v llama-server || echo "${LLAMA_CPP_HOME:-}/bin/llama-server")}"
 "$PY" -c 'import sys, yaml, jsonschema, openai, httpx' \
   || { echo "harness Python $PY cannot import its dependencies under the $CDB_PART modules"; exit 2; }
 echo "partition $CDB_PART node $(hostname); modules: $(module -t list 2>&1 | tr '\n' ' ')"
-echo "python $PY ($("$PY" -V 2>&1)); llama-server $LLAMA_SERVER; CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES"
+echo "python $PY ($("$PY" -V 2>&1)); llama-server $LLAMA_SERVER; CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES ($CDB_NGPU GPU, need $CDB_GPUS)"
 echo "node $(command -v node) ($(node --version 2>&1)); npm $(npm --version 2>&1)"
 
 # cdb_start_server LOG CMD...: start llama-server in the background, SRV=<pid>.
-# Launched directly when the batch step sees the GPU (nvidia-smi lists it); otherwise
-# through `srun --ntasks=1 --gres=gpu:1`, as CSCF's examples do.
+# Launched directly when the batch step sees the GPUs (nvidia-smi lists them); otherwise
+# through `srun --ntasks=1 --gres=gpu:$CDB_GPUS`, as CSCF's examples do.
 cdb_start_server() {
   local log="$1"; shift
   if nvidia-smi -L >/dev/null 2>&1 && [ -n "$(nvidia-smi -L 2>/dev/null)" ]; then
     echo "server launch: direct (GPU visible in the batch step)"
     "$@" >"$log" 2>&1 &
   else
-    echo "server launch: srun --ntasks=1 --gres=gpu:1 (GPU not visible in the batch step)"
-    srun --ntasks=1 --gres=gpu:1 --cpus-per-task="${SLURM_CPUS_PER_TASK:-4}" "$@" >"$log" 2>&1 &
+    echo "server launch: srun --ntasks=1 --gres=gpu:$CDB_GPUS (GPU not visible in the batch step)"
+    srun --ntasks=1 --gres=gpu:"$CDB_GPUS" --cpus-per-task="${SLURM_CPUS_PER_TASK:-4}" "$@" >"$log" 2>&1 &
   fi
   SRV=$!
 }
@@ -63,7 +67,7 @@ cdb_start_server() {
 # CSCF validated only -c 2048; these lines show what 16384 costs. Copy them into NOTES.md
 # ("Memory at 16384").
 cdb_log_buffers() {
-  local pat='buffer size|offload|kv_cache|kv self|KV self|n_ctx|memory breakdown|memory_breakdown|CUDA0 \(|MiB|out of memory|failed to allocate'
+  local pat='buffer size|offload|kv_cache|kv self|KV self|n_ctx|memory breakdown|memory_breakdown|CUDA[0-9]+ \(|using device|split_mode|MiB|out of memory|failed to allocate'
   echo "----- llama-server memory (${2:-after start}: $1) -----"
   grep -Ei "$pat" "$1" | sed 's/^[0-9.]* //' | head -n 60
   grep -Eqi 'buffer size' "$1" || echo "(no buffer-size lines in the log; run with --verbosity 4, as first_run_t05.sbatch does)"

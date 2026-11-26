@@ -38,6 +38,8 @@ export CDB_PORT=$(( 20000 + ${SLURM_JOB_ID:-0} % 20000 ))
 GGUF=$("$PY" -m bench.backends get "$MODEL" model_file)
 [ -f "$GGUF" ] || { echo "model file not found: $GGUF"; exit 2; }
 SERVE=$("$PY" -m bench.backends serve-cmd "$MODEL") || exit 2
+# CDB_SERVER_VERBOSITY=4: llama-server logs offload and buffers per GPU (multi-GPU checks).
+[ -n "${CDB_SERVER_VERBOSITY:-}" ] && SERVE="$SERVE --verbosity $CDB_SERVER_VERBOSITY"
 echo "job ${SLURM_JOB_ID:-?} node $(hostname) port $CDB_PORT git $(git rev-parse --short HEAD)"
 echo "model $MODEL invocation $INVOCATION tasks $TASKS run_timeout $RUN_TIMEOUT"
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/dev/null || true

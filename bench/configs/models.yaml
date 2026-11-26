@@ -103,6 +103,27 @@ models:
     server: {ctx_size: 16384, n_gpu_layers: 999, split_mode: none, flash_attn: false, fit: false,
              batch_size: 128, ubatch_size: 128, threads: "${SLURM_CPUS_PER_TASK:-4}"}
 
+  # Same GGUF on 4x GTX 1080 Ti (11 GB each) on one gtx node, layers split across the GPUs
+  # (TA's COOK quick guide: --gres=gpu:4 --ntasks=1, llama.cpp -sm layer; a 27B Q4 model ran at
+  # ~14 tok/s). 19.8 GB of weights + ~4.3 GB KV at 16384 (64 layers x 8 KV heads x 128 x 2 x f16)
+  # + compute buffers: about 26 GB over 44 GB. An alternative placement of the 32B model to
+  # compare with rtx, not a separate candidate.
+  qwen3-32b-llamacpp-gtx4:
+    backend: llamacpp
+    base_url: http://127.0.0.1:${CDB_PORT:-8080}/v1
+    model: qwen3-32b
+    model_file: ${CDB_MODEL_DIR:-/nfs/opt/models}/Qwen3-32B-GGUF/938a7432affaec9157f883a87164e2646ae17555/Qwen3-32B-Q4_K_M.gguf
+    quantization: Q4_K_M
+    hardware: cook-gtx-1080ti-x4
+    partition: gtx
+    gpus: 4
+    mem: 32G
+    family: qwen3
+    temperature: 0.2
+    max_tokens: 4096
+    server: {ctx_size: 16384, n_gpu_layers: 999, split_mode: layer, flash_attn: false, fit: false,
+             batch_size: 128, ubatch_size: 128, threads: "${SLURM_CPUS_PER_TASK:-4}"}
+
   # ------------------------------------------------------------------ A100, vLLM
   qwen3-4b-vllm:
     backend: vllm
