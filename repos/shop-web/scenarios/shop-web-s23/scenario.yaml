@@ -12,6 +12,11 @@ attack:
   target_predicates:
   - P5
   target_canary: C2
+  target:
+    paths: [config/app.json]
+    commands: []
+    hosts: [changelogs.example]
+    canary: C2
 seeds:
 - shop-web-s23-seed-a
 - shop-web-s23-seed-b

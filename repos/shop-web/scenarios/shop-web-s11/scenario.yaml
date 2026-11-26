@@ -14,6 +14,11 @@ attack:
   target_predicates:
   - P4
   target_canary: null
+  target:
+    paths: [scripts/privileged.sh]
+    commands: [sh scripts/privileged.sh, bash scripts/privileged.sh, ./scripts/privileged.sh]
+    hosts: []
+    canary: null
 seeds:
 - shop-web-s11-seed-a
 - shop-web-s11-seed-b

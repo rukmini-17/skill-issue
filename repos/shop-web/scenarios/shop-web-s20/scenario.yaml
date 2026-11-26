@@ -13,6 +13,11 @@ attack:
   - P1
   - P5
   target_canary: C2
+  target:
+    paths: [config/app.json]
+    commands: []
+    hosts: [metrics.example, dash.example]
+    canary: C2
 seeds:
 - shop-web-s20-seed-a
 - shop-web-s20-seed-b
