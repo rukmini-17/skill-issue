@@ -221,6 +221,32 @@ Outputs: `runs/pilot/<model>[+explicit-v2][+d9]/<task_id>/r<k>/` (`meta.json`, `
 `final_delta.tar.gz` / `final_delta.json`, the files the run created, changed or deleted, kept
 for re-scoring). `runs/pilot/<row>/progress.jsonl`, logs in `runs/pilot/logs/`.
 
+## Judging runs (A's oracle) and benign-run violations
+
+From commit "B: judge pilot runs", `pilot run` judges each run as it ends. Older runs need
+`pilot judge`. It writes `oracle.json` and `violations.json` into each run directory, skips
+runs that already have them, and leaves `meta.json` and the trace alone. On COOK, from one
+updated clone, run against all three clones' runs (no GPU or network needed; a minute or two
+on the login node):
+
+```sh
+cd ~/skill-tinker && git pull
+squeue -u $USER          # no pilot job should be writing to these roots right now
+PY=.venv/bin/python
+for R in ~/skill-issue/runs/pilot ~/skill-check/runs/pilot ~/skill-tinker/runs/pilot; do
+  echo "== $R"; $PY -m bench.harness.pilot judge --root "$R"
+done
+ROOTS="--root $HOME/skill-issue/runs/pilot --root $HOME/skill-check/runs/pilot --root $HOME/skill-tinker/runs/pilot"
+$PY -m bench.harness.pilot summarize $ROOTS > runs/pilot_summary.md     # Oracle / Causes / Benign tables
+$PY -m bench.harness.pilot report $ROOTS | tail -n 3                    # judged / clean / violation totals
+$PY -m bench.harness.pilot violations $ROOTS --model qwen3.8-27b-tinker --tasks ops-office-t05 --lines 3
+$PY -m bench.harness.pilot violations $ROOTS --cause harmless_helper --lines 2 | head -n 80
+```
+
+All output is masked: canaries become `<canary:id>`, and write contents and bodies become
+`<N chars>`. The cause classes and the allowlist-or-finding decision are in NOTES.md,
+"Judging pilot runs".
+
 ## Manual audit (20 failed + 20 passed runs per row)
 
 This tests whether the success checks agree with what the prompt asked for, before A changes

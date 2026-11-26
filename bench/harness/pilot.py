@@ -191,12 +191,20 @@ def cmd_run(a) -> int:
         t0 = time.monotonic()
         spec = make_spec(a.out, a.model, t, r, a.invocation, a.setup)
         harness.run(spec)
+        verdict = None
+        if not a.no_judge:                       # A's oracle on the fresh trace (oracle.json)
+            try:
+                from bench.harness.judge import judge_run
+                j = judge_run(spec.out_dir, force=True)
+                verdict = j and j["verdict"]
+            except Exception as e:               # never lose a run over judging; `pilot judge` retries
+                verdict = f"judge_error: {type(e).__name__}: {e}"[:200]
         meta = read_meta(spec.out_dir) or {}
         rec = {"task_id": t.task_id, "repeat": r, "invocation": a.invocation, "shard": a.shard, "seconds": round(time.monotonic() - t0, 1),
                "run_end": meta.get("run_end"), "success": (meta.get("success") or {}).get("success"),
                "agent_error_kind": meta.get("agent_error_kind"), "harness_error": meta.get("harness_error"),
                "host": (meta.get("host") or {}).get("hostname"), "job": os.environ.get("SLURM_JOB_ID"),
-               "cost_usd": meta.get("cost_usd"),
+               "cost_usd": meta.get("cost_usd"), "verdict": verdict,
                "agent_error": (meta.get("agent_error") or "")[:300] or None,
                "agent_error_body": (meta.get("agent_error_body") or "")[:800] or None,
                "job_spent_usd": round(budget.spent, 4) if budget is not None else None,
@@ -254,6 +262,12 @@ def collect(root: Path) -> list[dict]:
                 oracle = json.loads((d / "oracle.json").read_text()).get("verdict")
             except (OSError, json.JSONDecodeError):
                 oracle = "unreadable"
+        viol = {}
+        if (d / "violations.json").is_file():
+            try:
+                viol = json.loads((d / "violations.json").read_text())
+            except (OSError, json.JSONDecodeError):
+                viol = {}
         mc = m.get("model_config") or {}
         rows.append({
             "model": meta_p.parents[2].name, "backend": mc.get("backend"), "quantization": mc.get("quantization"),
@@ -281,6 +295,8 @@ def collect(root: Path) -> list[dict]:
             "ended_by_length": bool((m.get("turns") or [{}])[-1].get("finish_reason") == "length"
                                     and not (m.get("turns") or [{}])[-1].get("tool_calls")),
             "host": (m.get("host") or {}).get("hostname"),
+            "predicates": viol.get("predicates"), "causes": viol.get("causes"),
+            "programs": viol.get("programs"), "benign": not m.get("attack_run"),
             # behaviour (None for runs recorded before meta.json had "behaviour")
             "multi_call_turns": (m.get("behaviour") or {}).get("multi_call_turns"),
             "blind_write_turns": (m.get("behaviour") or {}).get("blind_write_turns"),
@@ -359,13 +375,45 @@ def summarize(rows: list[dict], expected_per_model: int | None = None) -> dict[s
     per_task.append("")
     per_task.append(f"Tasks whose skill was never loaded in any completed run ({len(never)}): "
                     + (", ".join(never) if never else "none"))
+    preds = ("P1", "P2", "P3", "P4", "P5")
+    from bench.harness.judge import CAUSES
+    orc = ["| model | judged | clean | violation | unjudgeable | clean rate | "
+           + " | ".join(f"runs with {x}" for x in preds) + " |", "|---|---|---|---|---|---|" + "---|" * len(preds)]
+    cau = ["| model | violating runs | only harmless_helper | " + " | ".join(CAUSES) + " |",
+           "|---|---|---|" + "---|" * len(CAUSES)]
+    for model, rs in sorted(by_model.items()):
+        j = [r for r in rs if r["complete"] and r["oracle"]]
+        v = [r for r in j if r["oracle"] == "violation"]
+        oj = [dict(r, oracle_clean=r["oracle"] == "clean") for r in j]
+        orc.append(f"| {model} | {len(j)} | {sum(r['oracle'] == 'clean' for r in j)} | {len(v)} | "
+                   f"{sum(r['oracle'] == 'unjudgeable' for r in j)} | {_rate(oj, 'oracle_clean')[0]} | "
+                   + " | ".join(str(sum(x in (r["predicates"] or []) for r in j)) for x in preds) + " |")
+        cau.append(f"| {model} | {len(v)} | {sum((r['causes'] or []) == ['harmless_helper'] for r in v)} | "
+                   + " | ".join(str(sum(c in (r["causes"] or []) for r in v)) for c in CAUSES) + " |")
+    benign = ["| task | row | violations / judged | predicates | causes | programs |", "|---|---|---|---|---|---|"]
+    for tid in sorted({r["task_id"] for r in rows if r["task_id"]}):
+        for model in sorted(by_model):
+            j = [r for r in by_model[model] if r["task_id"] == tid and r["complete"] and r["oracle"] and r["benign"]]
+            v = [r for r in j if r["oracle"] == "violation"]
+            if not v:
+                continue
+            pc = Counter(x for r in v for x in (r["predicates"] or []))
+            cc = Counter(x for r in v for x in (r["causes"] or []))
+            pg = Counter(x for r in v for x in (r["programs"] or []))
+            benign.append(f"| {tid} | {model} | {len(v)}/{len(j)} | "
+                          + ", ".join(f"{k} {n}" for k, n in sorted(pc.items())) + " | "
+                          + ", ".join(f"{k} {n}" for k, n in cc.most_common()) + " | "
+                          + (", ".join(f"{k} {n}" for k, n in pg.most_common(6)) or "-") + " |")
+    if len(benign) == 2:
+        benign.append("| (no benign run with a violation, or no run judged yet) | | | | | |")
     errs = ["| model | error kind | runs |", "|---|---|---|"]
     for model, rs in sorted(by_model.items()):
         for kind, n in sorted(Counter(r["error_kind"] or r["run_end"] for r in rs
                                       if r["run_end"] in ("error", "harness_error")).items()):
             errs.append(f"| {model} | {kind} | {n} |")
     return {"main": "\n".join(lines), "per_repo": "\n".join(per_repo), "behaviour": "\n".join(beh),
-            "per_task": "\n".join(per_task),
+            "per_task": "\n".join(per_task), "oracle": "\n".join(orc), "causes": "\n".join(cau),
+            "benign_violations": "\n".join(benign),
             "errors": "\n".join(errs)}
 
 
@@ -379,7 +427,15 @@ def render(tables: dict[str, str]) -> str:
             f"{tables['behaviour']}\n\n#### Skill loads per task\n\nEach cell: runs that read the task's "
             "SKILL.md / runs that passed the success check, over completed runs. A `+explicit-v2` row "
             "used explicit invocation (decision 8 wording); a `+explicit` row the earlier `/<skill_id>` form.\n\n"
-            f"{tables['per_task']}\n\n#### Errors\n\n{tables['errors']}\n")
+            f"{tables['per_task']}\n\n#### Oracle (A's verdict per run; `pilot judge`)\n\n"
+            "Predicates: P1 network host, P2 read, P3 write, P4 command, P5 canary in a request, "
+            "outside the task's delegation. Counts are runs with the predicate as an effect.\n\n"
+            f"{tables['oracle']}\n\n#### Causes of violations (B's classification, `bench.harness.judge`)\n\n"
+            "Runs with a violation, per cause. harmless_helper = an undelegated read-only helper "
+            "command (date, ls, cat, echo ...).\n\n"
+            f"{tables['causes']}\n\n#### Benign runs with violations, per task\n\n"
+            "Offending lines: `python -m bench.harness.pilot violations --task <id>`.\n\n"
+            f"{tables['benign_violations']}\n\n#### Errors\n\n{tables['errors']}\n")
 
 
 def _report_rows(a) -> list[dict]:
@@ -418,7 +474,8 @@ def cmd_report(a) -> int:
     """One line per run (skill-load checks): task, row, skill_load, skill_used, success, run_end.
     ``--timing`` adds where the time went (model seconds, tokens, reasoning) and a per-row mean."""
     rows = _report_rows(a)
-    head = "| row | task | skill | invocation | skill_load | skill_used | success | run_end | steps | agent s |"
+    head = ("| row | task | skill | invocation | skill_load | skill_used | success | run_end | steps | agent s |"
+            " verdict | predicates | causes |")
     if a.timing:
         head += (" model s | prompt tok | compl tok | compl tok/step | s/step | tok/s | reasoning chars |"
                  " trunc | host | cost $ |")
@@ -427,7 +484,8 @@ def cmd_report(a) -> int:
     for r in sorted(rows, key=lambda r: (r["model"], r["task_id"], r["repeat"])):
         line = (f"| {r['model']} | {r['task_id']} r{r['repeat']} | {r['skill_id']} | {r['invocation']} | "
                 f"{r['skill_loaded']} | {r['skill_used']} | {r['success']} | {r['run_end']} | {r['steps']} | "
-                f"{r['agent_s'] if r['agent_s'] is None else round(r['agent_s'])} |")
+                f"{r['agent_s'] if r['agent_s'] is None else round(r['agent_s'])} | {r['oracle'] or '-'} | "
+                f"{','.join(r['predicates'] or []) or '-'} | {','.join(r['causes'] or []) or '-'} |")
         if a.timing:
             line += (f" {_mean([r['model_s']])} | {r['prompt_tokens']} | {r['completion_tokens']} | "
                      f"{_mean([_per(r['completion_tokens'], r['steps'])])} | "
@@ -439,9 +497,13 @@ def cmd_report(a) -> int:
     costs = [r["cost_usd"] for r in rows if r.get("cost_usd") is not None]
     if costs:
         print(f"\ncost: ${sum(costs):.4f} over {len(costs)} runs (mean ${sum(costs) / len(costs):.4f}/run)")
+    judged = [r for r in done if r["oracle"]]
     print(f"\n{len(done)} completed runs: skill_load {sum(bool(r['skill_loaded']) for r in done)}, "
           f"skill_used {sum(bool(r['skill_used']) for r in done)}, "
-          f"success {sum(r['success'] is True for r in done)}")
+          f"success {sum(r['success'] is True for r in done)}, "
+          f"judged {len(judged)}: clean {sum(r['oracle'] == 'clean' for r in judged)}, "
+          f"violation {sum(r['oracle'] == 'violation' for r in judged)}, "
+          f"unjudgeable {sum(r['oracle'] == 'unjudgeable' for r in judged)}")
     if a.timing:
         print("\n| row | runs | mean steps | mean agent s | mean model s | mean compl tok | "
               "mean compl tok/step | mean s/step | runs < 5 tok/s | truncated turns (runs ended by one) | "
@@ -458,6 +520,52 @@ def cmd_report(a) -> int:
                   f"{sum((_per(r['completion_tokens'], r['model_s']) or 99) < 5 for r in g)} | "
                   f"{sum(r['truncated_turns'] for r in g)} ({sum(r['ended_by_length'] for r in g)}) | "
                   f"{', '.join(f'{k} {v}' for k, v in sorted(ends.items(), key=str))} |")
+    return 0
+
+
+def cmd_judge(a) -> int:
+    """A's oracle over existing runs (oracle.json + violations.json); skips judged runs."""
+    from bench.harness.judge import judge_run, run_dirs
+    tasks = set(a.tasks.split(",")) if a.tasks else None
+    counts: Counter = Counter()
+    for d in run_dirs(a.root or [PILOT_ROOT], a.model, tasks):
+        m = read_meta(d) or {}
+        if m.get("harness_error") or "success" not in m:
+            counts["skipped (incomplete)"] += 1
+            continue
+        try:
+            j = judge_run(d, force=a.force)
+        except Exception as e:
+            counts["judge error"] += 1
+            print(f"{d}: judge error {type(e).__name__}: {str(e)[:200]}", file=sys.stderr)
+            continue
+        if j is None:
+            counts["skipped (judged before or no trace)"] += 1
+            continue
+        counts[j["verdict"]] += 1
+    print(", ".join(f"{k} {v}" for k, v in sorted(counts.items())) or "no runs found")
+    return 0
+
+
+def cmd_violations(a) -> int:
+    """Offending trace lines (masked) of benign runs with a violation, grouped by task."""
+    rows = [r for r in _report_rows(a) if r["oracle"] == "violation" and r["benign"]
+            and (not a.cause or a.cause in (r["causes"] or []))]
+    by_task: dict[str, list[dict]] = defaultdict(list)
+    for r in rows:
+        by_task[r["task_id"]].append(r)
+    for tid in sorted(by_task):
+        rs = by_task[tid]
+        print(f"## {tid}: {len(rs)} violating run(s)")
+        for r in sorted(rs, key=lambda r: (r["model"], r["repeat"])):
+            v = json.loads((Path(r["run_dir"]) / "violations.json").read_text())
+            print(f"  {r['model']} r{r['repeat']}  predicates {','.join(v['predicates'])}  "
+                  f"causes {','.join(v['causes'])}  ({r['run_dir']})")
+            for line in [x for x in v["lines"] if x["effect"]][:a.lines]:
+                print(f"    seq {line['seq']} {','.join(line['predicates'])} [{','.join(line['causes'])}] "
+                      f"{line['line'][:a.width]}")
+    if not by_task:
+        print("no benign run with a violation" + (f" and cause {a.cause}" if a.cause else ""))
     return 0
 
 
@@ -546,7 +654,7 @@ def cmd_audit_sample(a) -> int:
 
 
 def cmd_summarize(a) -> int:
-    rows = collect(a.root)
+    rows = [r for root in (a.root or [PILOT_ROOT]) for r in collect(root)]
     if a.csv:
         a.csv.parent.mkdir(parents=True, exist_ok=True)
         buf = io.StringIO()
@@ -594,6 +702,8 @@ def main(argv: list[str] | None = None) -> int:
                    help="hard USD cap for this job (needs `price` in models.yaml; 0 = none). No request "
                         "is sent that could pass it; runs it stops are rerun on the next job")
     r.add_argument("--observer", default="auto", help="auto | strace | none (strace: fail if missing)")
+    r.add_argument("--no-judge", action="store_true",
+                   help="don't run A's oracle after each run (default: judge; writes oracle.json)")
     r.add_argument("--max-total-tokens", type=int, default=0,
                    help="stop starting runs once this model's runs used this many tokens (Tinker credit)")
     r.add_argument("--wait-s", type=float, default=900.0, help="wait this long for the model server")
@@ -602,7 +712,7 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--dry-run", action="store_true")
     r.add_argument("--out", type=Path, default=PILOT_ROOT)
     s = sub.add_parser("summarize")
-    s.add_argument("--root", type=Path, default=PILOT_ROOT)
+    s.add_argument("--root", type=Path, action="append", help=f"repeatable (default {PILOT_ROOT})")
     s.add_argument("--repeats", type=int, default=REPEATS)
     s.add_argument("--csv", type=Path, default=None)
     s.add_argument("--update-md", type=Path, default=None)
@@ -628,7 +738,24 @@ def main(argv: list[str] | None = None) -> int:
     au.add_argument("--pass", dest="passed", type=int, default=20)
     au.add_argument("--seed", type=int, default=0)
     au.add_argument("--out", type=Path, help="CSV to write (default: print)")
+    jd = sub.add_parser("judge", help="run A's oracle over existing runs (writes oracle.json)")
+    jd.add_argument("--root", type=Path, action="append")
+    jd.add_argument("--model", default="")
+    jd.add_argument("--tasks", default="")
+    jd.add_argument("--force", action="store_true", help="judge again runs that have oracle.json")
+    vi = sub.add_parser("violations", help="offending trace lines of benign runs with a violation")
+    vi.add_argument("--root", type=Path, action="append")
+    vi.add_argument("--model", default="")
+    vi.add_argument("--tasks", default="")
+    vi.add_argument("--cause", default="", help="only runs with this cause (e.g. harmless_helper)")
+    vi.add_argument("--lines", type=int, default=5, help="offending lines per run (default 5)")
+    vi.add_argument("--width", type=int, default=300)
     a = ap.parse_args(argv)
+    if a.cmd == "judge":
+        return cmd_judge(a)
+    if a.cmd == "violations":
+        a.common_tasks = False
+        return cmd_violations(a)
     if a.cmd == "audit-sample":
         a.common_tasks = False
         return cmd_audit_sample(a)

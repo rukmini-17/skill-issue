@@ -75,7 +75,8 @@ def test_run_resume_and_summary(tmp_path, monkeypatch):
     rows = pilot.collect(out)
     assert len(rows) == 2 and rows[0]["backend"] == "vllm" and rows[0]["skill_loaded"] is False
     tables = pilot.summarize(rows)
-    assert "| fake-vllm+d9 | vllm | bf16 |" in tables["main"] and "n/a" in tables["main"]
+    assert "| fake-vllm+d9 | vllm | bf16 |" in tables["main"]       # judged by default: no n/a clean rate
+    assert (out / "fake-vllm+d9/ops-office-t05/r0/oracle.json").is_file()
 
 
 def test_server_not_ready_fails_fast(tmp_path, monkeypatch):
@@ -239,7 +240,7 @@ def test_report_lines_and_skill_check_job(tmp_path, capsys):
     assert pilot.main(["report", "--root", str(root), "--root", str(other), "--model", "q14", "--timing"]) == 0
     out = capsys.readouterr().out
     assert "q32" not in out and "| q14 | ops-office-t01 r0 |" in out and "4 completed runs" in out
-    assert "| done | 3 | 10 | - | 50 | 50 | 17 | 3 | - | None | 0 | - |" in out   # no model_s/host in the fake
+    assert "| done | 3 | 10 | - | - | - | - | 50 | 50 | 17 | 3 | - | None | 0 | - |" in out   # not judged; no model_s/host
     assert "| q14+explicit-v2 | 3 | 3.0 | 10 | - | 50 | 17 | 3 | 0 | 0 (0) | done 3 |" in out
     assert pilot.main(["report", "--root", str(root), "--root", str(other), "--model", "q14",
                        "--timing", "--common-tasks"]) == 0
