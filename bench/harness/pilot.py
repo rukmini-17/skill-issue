@@ -219,6 +219,10 @@ def collect(root: Path) -> list[dict]:
             "truncated_turns": m.get("truncated_turns") or 0, "observer": m.get("observer"),
             "isolation": m.get("isolation"), "agent_s": (m.get("timings") or {}).get("agent_s"),
             "tokens": sum((m.get("usage") or {}).get(k, 0) for k in ("prompt_tokens", "completion_tokens")),
+            # behaviour (None for runs recorded before meta.json had "behaviour")
+            "multi_call_turns": (m.get("behaviour") or {}).get("multi_call_turns"),
+            "blind_write_turns": (m.get("behaviour") or {}).get("blind_write_turns"),
+            "turns_with_reasoning": (m.get("behaviour") or {}).get("turns_with_reasoning"),
         })
     return rows
 
@@ -261,12 +265,22 @@ def summarize(rows: list[dict], expected_per_model: int | None = None) -> dict[s
             orows = [dict(r, oracle_clean=(None if r["oracle"] is None else r["oracle"] == "clean")) for r in sub]
             per_repo.append(f"| {model} | {repo} | {len(sub)} | {_rate(sub, 'success')[0]} | "
                             f"{_rate(orows, 'oracle_clean')[0]} | {_rate(sub, 'skill_loaded')[0]} |")
+    beh = ["| model | runs | runs with a multi-call turn | runs that wrote before reading "
+           "| multi-call turns/run | runs with thinking | skill-load rate |", "|---|---|---|---|---|---|---|"]
+    for model, rs in sorted(by_model.items()):
+        sub = [r for r in rs if r["complete"] and r["multi_call_turns"] is not None]
+        flags = [dict(r, multi=r["multi_call_turns"] > 0, blind=r["blind_write_turns"] > 0,
+                      thinks=r["turns_with_reasoning"] > 0) for r in sub]
+        beh.append(f"| {model} | {len(sub)} | {_rate(flags, 'multi')[0]} | {_rate(flags, 'blind')[0]} | "
+                   + (f"{statistics.mean(r['multi_call_turns'] for r in sub):.2f}" if sub else "-")
+                   + f" | {_rate(flags, 'thinks')[0]} | {_rate(sub, 'skill_loaded')[0]} |")
     errs = ["| model | error kind | runs |", "|---|---|---|"]
     for model, rs in sorted(by_model.items()):
         for kind, n in sorted(Counter(r["error_kind"] or r["run_end"] for r in rs
                                       if r["run_end"] in ("error", "harness_error")).items()):
             errs.append(f"| {model} | {kind} | {n} |")
-    return {"main": "\n".join(lines), "per_repo": "\n".join(per_repo), "errors": "\n".join(errs)}
+    return {"main": "\n".join(lines), "per_repo": "\n".join(per_repo), "behaviour": "\n".join(beh),
+            "errors": "\n".join(errs)}
 
 
 def render(tables: dict[str, str]) -> str:
@@ -274,7 +288,9 @@ def render(tables: dict[str, str]) -> str:
             "Rates are over completed runs, with 95% Wilson intervals; runs are not independent "
             "(3 repeats per task), so the intervals are optimistic._\n\n"
             f"#### Per model\n\n{tables['main']}\n\n#### Per model and repo\n\n{tables['per_repo']}\n\n"
-            f"#### Errors\n\n{tables['errors']}\n")
+            "#### Behaviour\n\n'Wrote before reading': a turn with `write_file` alongside a read, "
+            "list, request or command whose result the model had not seen yet.\n\n"
+            f"{tables['behaviour']}\n\n#### Errors\n\n{tables['errors']}\n")
 
 
 def cmd_summarize(a) -> int:

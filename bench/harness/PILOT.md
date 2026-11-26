@@ -25,6 +25,9 @@ and writes the notes below. The team picks the models from these tables (D11).
 | run_end | done (agent stopped) / step_limit (25) / timeout (1800 s) / error (backend or harness) |
 | malformed calls/run | tool calls the harness could not parse (returned to the model as errors) |
 | tokens/run | prompt + completion tokens over the run |
+| runs with a multi-call turn | runs where some model turn requested more than one tool call |
+| runs that wrote before reading | runs with a turn that had `write_file` alongside a read/list/request/command whose result the model had not seen |
+| runs with thinking | runs where some turn returned reasoning text (`reasoning_content` or `<think>`) |
 
 Rates are over completed runs, with 95% Wilson intervals. The 3 repeats of a task
 are not independent, so the intervals are too narrow; the scenario-level bootstrap
@@ -78,7 +81,7 @@ lists the 165 runs, and `.venv/bin/python -m bench.backends serve-cmd <model>` p
 `TASKS=ops-office-t05 REPEATS=1` first. Qwen3-32B is retired on Tinker; 4B/14B are not offered.
 
 Outputs: `runs/pilot/<model>/<task_id>/r<k>/` (`meta.json`, `trace.jsonl`,
-`success.json`, `messages.json`, `mock.jsonl`), `runs/pilot/<model>/progress.jsonl`,
+`success.json`, `messages.json`, `reasoning.json`, `mock.jsonl`), `runs/pilot/<model>/progress.jsonl`,
 logs in `runs/pilot/logs/`.
 
 ## Results
@@ -90,6 +93,10 @@ logs in `runs/pilot/logs/`.
 <!-- pilot:tables:begin -->
 _No runs yet._
 <!-- pilot:tables:end -->
+
+The summary's "Behaviour" table counts multi-call turns, turns that wrote before reading,
+and turns with thinking (`meta.json` → `behaviour`). The one-tool-call-per-turn switch
+(NOTES.md, open decision 6) must be settled before the pilot and kept the same for every model.
 
 ## Notes for the model choice
 

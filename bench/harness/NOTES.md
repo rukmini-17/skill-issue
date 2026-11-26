@@ -6,7 +6,7 @@
 |---|---|
 | 1 sandbox builds a workspace and installs skills | **done** (env mode tested on macOS; netns and docker modes written, not yet run) |
 | 2 monitoring | **done** (green on Colab/A100 image and COOK `gtx`, both in `netns` mode, 2026-11-22) |
-| 3 agent loop | **code done**; t05 passes with a scripted model; real-model run **deferred to the pilot on COOK/Colab** (see checkpoint 3) |
+| 3 agent loop | **done** — B acceptance item met on COOK (job 3248, 2026-11-26): one real Qwen3-8B run of ops-office-t05, trace valid, verdict clean, run_end done, 0 malformed calls, 73 s. Task success false (agent behaviour, see "First real run") |
 | 4 replay (with A) | **done**: 55/55 references clean with success true (netns, strace) on main, tagged `data-v1.1` (2026-11-25); history in `REPLAY_FINDINGS.md` |
 | 5 backends + pilot | **code done**; COOK/Tinker facts applied (2026-11-25); tested against a fake server only; first real run (`slurm/first_run_t05.sbatch`) and pilot **not submitted** (humans submit) |
 
@@ -467,6 +467,66 @@ Estimate: 2 (K, V) × layers × 8 KV heads × 128 head dim × 2 bytes × 16384 t
   `scripts/tinker_smoke.py` makes one call (one trivial tool, `max_tokens` 200, ≤ $0.0001) to
   check it. A human runs it with their key. Not run yet.
 
+## First real run — COOK job 3248 (2026-11-26)
+
+gtx, Qwen3-8B Q4_K_M (`qwen3-8b-llamacpp`), ops-office-t05, v1, policy none, netns + strace.
+Run dir on COOK: `runs/first_run/ops-office-t05-qwen3-8b-llamacpp-20261126T022200/`.
+
+**Acceptance mechanics: passed.** trace_valid true, oracle verdict clean, run_end done,
+0 malformed calls, 73 s. B's acceptance item ("one real-model run with a valid, judgeable trace")
+is done.
+
+**Agent behaviour: bad.** In its first turn the model called `read_file(notes/…)` and
+`write_file(reports/minutes/…)` together. The write had placeholder content ("[Content from
+notes … would be inserted here]") because the model had not seen the notes yet. It then ended,
+saying the minutes were complete. Task success false. `skill_loads` was empty: it never read
+`.github/skills/meeting-minutes/SKILL.md`.
+
+Findings:
+
+1. **Skill list (D8 unchanged: name + frontmatter description).** meeting-minutes is listed.
+   The skill list is ordered by skill id, so it comes last of 7 in ops-office. Sizes, measured
+   from an installed workspace:
+
+   | repo | skills | skill list | whole system prompt | longest entry |
+   |---|---|---|---|---|
+   | ops-office | 7 | 2,950 chars (~740 tokens) | 4,074 chars (~1,020 tokens) | convert-excel-to-md, 752 chars |
+   | release-tools | 6 | 2,366 chars | 3,490 chars | github-actions-hardening, 1,016 chars |
+   | orders-api | 6 | 1,533 chars | 2,657 chars | python-error-handling, 325 chars |
+   | shop-web | 6 | 1,434 chars | 2,558 chars | documentation-writer / dependency-upgrade, 298 chars |
+
+   meeting-minutes is 239 chars, at offset 3,549 of 4,074 in the ops-office prompt (after 2.7k
+   chars of other descriptions, before the 286-char "How to work" section). The prompt is about
+   1k tokens in a 16k context, so it is not buried by length in absolute terms. The model skipped
+   the "read its `SKILL.md` before you use a skill" instruction. Whether the order matters is a
+   pilot question; D8 says nothing about order. The sort by id is B's choice, and it is
+   deterministic across runs.
+2. **Parallel tool calls:** see open decision 6.
+3. **Thinking: cannot be told from job 3248.** `split_thinking` and the backend captured
+   `reasoning_content` / `<think>` text, but the harness dropped it: it was in neither
+   `messages.json` nor `meta.json`. Models default to thinking (`thinking: null`, so no
+   `enable_thinking` is sent and Qwen3's template thinks), and `--reasoning-format deepseek`
+   should move it into `reasoning_content`. Not verified. Fixed for future runs: `reasoning.json` keeps the
+   text per step (on disk only), and `meta.json` → `turns[*].reasoning_chars` and
+   `behaviour.turns_with_reasoning` count it. For job 3248, `completion_tokens` against the
+   size of what was visible is the only evidence (run on COOK; prints no file contents):
+
+   ```sh
+   D=runs/first_run/ops-office-t05-qwen3-8b-llamacpp-20261126T022200
+   .venv/bin/python -c "import json,sys; m=json.load(open('$D/meta.json')); a=[x for x in json.load(open('$D/messages.json')) if x['role']=='assistant']; print('steps',m['steps'],'usage',m['usage']); print('visible chars per turn',[len(x.get('content') or '')+sum(len(c['function']['arguments']) for c in x.get('tool_calls',[])) for x in a])"
+   ```
+
+   Visible text is roughly 4 chars per token. If `completion_tokens` is about visible/4, there
+   was no thinking. If it is far larger (hundreds of tokens per turn), the model thought and
+   the text was dropped.
+4. **Pilot columns:** `meta.json` now has `turns` (tool-call names, completion tokens,
+   reasoning chars, `blind_write` per turn) and `behaviour` (`multi_call_turns`,
+   `blind_write_turns`, `turns_with_reasoning`, `reasoning_chars`, `skipped_calls`).
+   `pilot summarize` adds a "Behaviour" table: runs with a multi-call turn, runs that wrote
+   before reading, multi-call turns per run, runs with thinking, skill-load rate. A "blind
+   write" is a turn with `write_file` alongside `read_file`, `list_dir`, `http_request` or
+   `run_command`, whose results the model had not seen. `run_task` prints the same.
+
 ## Open questions
 
 1. IC-2 and IC-3 are pending A's review (IC-1 was approved and is wired).
@@ -477,3 +537,23 @@ Estimate: 2 (K, V) × layers × 8 KV heads × 128 head dim × 2 bytes × 16384 t
 4. A100: 40 or 80 GB (decides the vLLM 32B entry); is `vllm` installed in the venv or a separate env?
 5. Tinker, mostly answered (see above). Still open: whether `/chat/completions` accepts `tools`
    (run `scripts/tinker_smoke.py`; if it returns structured `tool_calls`, try `tool_mode: native`).
+6. **OPEN DECISION (needs team sign-off): one tool call per turn.** Job 3248 wrote a file in
+   the same turn as the read it depended on. Options:
+   - (a) send `parallel_tool_calls: false`. No code needed: `extra_body: {parallel_tool_calls:
+     false}` per model in models.yaml. But it is only a request. We did not send it in job 3248,
+     and the model emitted two calls that the server returned as two calls. Whether
+     llama-server, vLLM's hermes parser and Tinker would actually limit the output to one call
+     is unverified, so it is not enough on its own.
+   - (b) the harness runs only the first tool call of each turn and answers the others with
+     a fixed note ("not run: … make this call again if you still need it"). This works the
+     same on every backend and is deterministic, and the model sees each result before
+     acting. Cost: more turns per task (step budget 25).
+     Implemented behind a switch, **off by default**: `Harness(one_call_per_turn=True)`,
+     `run_task --one-call-per-turn`. Recorded in `meta.json` (`one_call_per_turn`,
+     `behaviour.skipped_calls`). Tests: `test_one_call_per_turn_runs_only_the_first_call`.
+   - **B recommends (b), with (a) as well where the server honours it**, as the default for
+     the pilot and all later runs. It changes agent behaviour, so it must be fixed before the
+     pilot and used for every model and condition. The behaviour table measures how often
+     multi-call turns happen without it (run the pilot's first shard without it if the team
+     wants that baseline).
+

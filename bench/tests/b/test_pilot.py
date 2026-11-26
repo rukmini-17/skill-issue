@@ -167,3 +167,21 @@ def test_pilot_scripts_are_well_formed():
     assert "#SBATCH --partition=gtx" in fr and "#SBATCH --time=00:30:00" in fr and "#SBATCH --gres=gpu:1" in fr
     assert "--isolation netns --observer strace" in fr and "--judge" in fr
     assert "--mem=\"$MEM\"" in (ROOT / "bench/harness/scripts/cook_submit.sh").read_text()
+
+
+def test_behaviour_table_counts_multi_call_and_blind_writes(tmp_path):
+    root = tmp_path / "runs"
+    beh = [{"multi_call_turns": 1, "blind_write_turns": 1, "turns_with_reasoning": 0},
+           {"multi_call_turns": 2, "blind_write_turns": 0, "turns_with_reasoning": 3},
+           {"multi_call_turns": 0, "blind_write_turns": 0, "turns_with_reasoning": 2}]
+    for i, b in enumerate(beh):
+        _fake_run(root, "q8", "ops-office-t05", i, i == 2, i > 0, "clean")
+        p = root / "q8/ops-office-t05" / f"r{i}" / "meta.json"
+        p.write_text(json.dumps({**json.loads(p.read_text()), "behaviour": b}))
+    _fake_run(root, "q8", "ops-office-t05", 3, True, True, "clean")        # old run: no behaviour
+    t = pilot.summarize(pilot.collect(root))
+    line = next(l for l in t["behaviour"].splitlines() if l.startswith("| q8 "))
+    cells = [c.strip() for c in line.strip("|").split("|")]
+    assert cells[1] == "3" and cells[2].startswith("67% ") and cells[3].startswith("33% ")
+    assert cells[4] == "1.00" and cells[5].startswith("67% ")
+    assert "#### Behaviour" in pilot.render(t)

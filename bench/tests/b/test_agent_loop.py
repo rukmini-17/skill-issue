@@ -414,3 +414,41 @@ def test_run_task_judge_reports_validity_verdict(tmp_path):
     assert out["trace_valid"] is True and out["trace_problems"] == []
     assert out["verdict"] == "clean" and out["predicates"] == [] and out["p5_match"] == "none"
     assert json.loads((sp.out_dir / "oracle.json").read_text())["verdict"] == "clean"
+
+
+# ------------------------------------------------- parallel tool calls ---
+
+PLACEHOLDER = "# Minutes\n\n[Content from notes would be inserted here]\n"
+
+
+def _cook_3248_script():
+    """Shape of COOK job 3248: read and write in one turn (write composed blind), then done."""
+    return [[("read_file", {"path": NOTE}), ("write_file", {"path": OUT, "content": PLACEHOLDER})],
+            "<think>The minutes are written.</think>The minutes are complete."]
+
+
+def test_blind_write_is_counted_and_reasoning_recorded(tmp_path):
+    sp = spec(tmp_path, run_id="blind")
+    harness(ScriptedModel(_cook_3248_script()), tmp_path).run(sp)
+    meta = json.loads((sp.out_dir / "meta.json").read_text())
+    assert meta["behaviour"] == {"multi_call_turns": 1, "blind_write_turns": 1, "turns_with_reasoning": 1,
+                                 "reasoning_chars": len("The minutes are written."), "skipped_calls": 0}
+    assert meta["turns"][0]["tool_calls"] == ["read_file", "write_file"] and meta["turns"][0]["blind_write"]
+    assert meta["one_call_per_turn"] is False and meta["success"]["success"] is False
+    assert json.loads((sp.out_dir / "reasoning.json").read_text()) == [
+        {"step": 2, "text": "The minutes are written."}]
+    msgs = json.loads((sp.out_dir / "messages.json").read_text())
+    assert "think" not in json.dumps(msgs)                     # thinking is not sent back to the model
+
+
+def test_one_call_per_turn_runs_only_the_first_call(tmp_path):
+    sp = spec(tmp_path, run_id="one")
+    harness(ScriptedModel(_cook_3248_script()), tmp_path, one_call_per_turn=True).run(sp)
+    meta = json.loads((sp.out_dir / "meta.json").read_text())
+    assert meta["one_call_per_turn"] is True and meta["behaviour"]["skipped_calls"] == 1
+    assert meta["tool_calls"] == 1
+    msgs = json.loads((sp.out_dir / "messages.json").read_text())
+    tool_msgs = [m for m in msgs if m["role"] == "tool"]
+    assert len(tool_msgs) == 2 and tool_msgs[1]["content"] == agent_mod.SKIPPED_NOTE
+    trace = check_trace_v2(sp.out_dir / "trace.jsonl")
+    assert not _lines(trace, tool="write_file")               # the blind write never ran

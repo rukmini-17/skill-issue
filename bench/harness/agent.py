@@ -67,10 +67,41 @@ class AgentResult:
     model_seconds: float = 0.0
     usage: dict[str, int] = field(default_factory=dict)
     messages: list[dict] = field(default_factory=list)
+    turns: list[dict] = field(default_factory=list)       # per model turn (meta.json "turns")
+    reasoning: list[dict] = field(default_factory=list)   # {"step", "text"} -> reasoning.json
+    skipped_calls: int = 0                                # one_call_per_turn: calls not run
+
+    def behaviour(self) -> dict:
+        """Run-level counts from ``turns`` (meta.json; pilot "behaviour" table)."""
+        t = self.turns
+        return {"multi_call_turns": sum(len(x["tool_calls"]) > 1 for x in t),
+                "blind_write_turns": sum(x["blind_write"] for x in t),
+                "turns_with_reasoning": sum(x["reasoning_chars"] > 0 for x in t),
+                "reasoning_chars": sum(x["reasoning_chars"] for x in t),
+                "skipped_calls": self.skipped_calls}
+
+
+# A write composed in the same turn as calls whose results the model has not seen yet.
+_LOOK = {"read_file", "list_dir", "http_request", "run_command"}
+SKIPPED_NOTE = ("not run: this harness runs one tool call per turn, so only your first call was "
+                "executed. Look at its result, then make this call again if you still need it.")
+
+
+def turn_record(step: int, turn) -> dict:
+    names = [c.name for c in turn.tool_calls]
+    return {"step": step, "tool_calls": names, "finish_reason": turn.finish_reason,
+            "completion_tokens": turn.usage.get("completion_tokens"),
+            "content_chars": len(turn.content or ""), "reasoning_chars": len(turn.reasoning or ""),
+            "parsed_from_content": turn.parsed_from_content,
+            "blind_write": "write_file" in names and bool(_LOOK & set(names))}
 
 
 def run_agent(model: ChatModel, executor: ToolExecutor, system: str, user: str,
-              max_steps: int = MAX_STEPS, timeout: float = RUN_TIMEOUT) -> AgentResult:
+              max_steps: int = MAX_STEPS, timeout: float = RUN_TIMEOUT,
+              one_call_per_turn: bool = False) -> AgentResult:
+    """``one_call_per_turn`` (PROPOSED, off by default; NOTES.md open decision): run only
+    the first tool call of a turn and answer the others with ``SKIPPED_NOTE``, so the
+    model sees each result before acting on it."""
     t0 = time.monotonic()
     messages: list[dict] = [{"role": "system", "content": system}, {"role": "user", "content": user}]
     res = AgentResult("done", 0, messages=messages)
@@ -90,6 +121,9 @@ def run_agent(model: ChatModel, executor: ToolExecutor, system: str, user: str,
                 res.truncated_turns += 1
             for k in usage:
                 usage[k] += turn.usage.get(k, 0)
+            res.turns.append(turn_record(res.steps, turn))
+            if turn.reasoning:
+                res.reasoning.append({"step": res.steps, "text": turn.reasoning})
             msg: dict = {"role": "assistant", "content": turn.content}
             if turn.tool_calls:
                 msg["tool_calls"] = [{"id": c.id, "type": "function",
@@ -100,7 +134,11 @@ def run_agent(model: ChatModel, executor: ToolExecutor, system: str, user: str,
                 res.final_text = turn.content
                 res.reason = "done"
                 break
-            for c in turn.tool_calls:
+            for i, c in enumerate(turn.tool_calls):
+                if one_call_per_turn and i > 0:
+                    res.skipped_calls += 1
+                    messages.append({"role": "tool", "tool_call_id": c.id, "content": SKIPPED_NOTE})
+                    continue
                 try:
                     args = parse_call(c.name, c.arguments)
                 except MalformedCall as e:

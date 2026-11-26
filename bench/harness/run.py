@@ -112,7 +112,8 @@ class Harness:
                  isolation: str = "auto", observer: str = "auto", work_root: Path | None = None,
                  keep_workspace: bool = False, max_steps: int = agent_mod.MAX_STEPS,
                  run_timeout: float = agent_mod.RUN_TIMEOUT, ic2: bool = False,
-                 prompt_path: Path | None = None, repos_dir: Path = REPOS):
+                 prompt_path: Path | None = None, repos_dir: Path = REPOS,
+                 one_call_per_turn: bool = False):
         self.model_factory = model_factory or default_model_factory
         self.mock_kind = mock
         self.isolation = os.environ.get("CDB_ISOLATION", isolation)
@@ -124,6 +125,8 @@ class Harness:
         self.ic2 = ic2                       # pending IC-2; keep False until approved
         self.prompt_path = prompt_path or agent_mod.PROMPT_PATH
         self.repos_dir = Path(repos_dir)
+        # PROPOSED (needs team sign-off, NOTES.md open decision): run one tool call per turn.
+        self.one_call_per_turn = one_call_per_turn
 
     def run(self, spec: RunSpec) -> Path:
         out = Path(spec.out_dir)
@@ -176,7 +179,8 @@ class Harness:
 
             ex = ToolExecutor(sb, mon, tw, spec.policy, spec.task, spec.installed, proxy, tail)
             t = time.monotonic()
-            res = agent_mod.run_agent(model, ex, system, user, self.max_steps, self.run_timeout)
+            res = agent_mod.run_agent(model, ex, system, user, self.max_steps, self.run_timeout,
+                                      one_call_per_turn=self.one_call_per_turn)
             meta["timings"]["agent_s"] = round(time.monotonic() - t, 3)
             meta["timings"]["model_s"] = round(res.model_seconds, 3)
             meta.update(run_end=res.reason, steps=res.steps, tool_calls=res.tool_calls,
@@ -184,10 +188,13 @@ class Harness:
                         agent_error_kind=res.error_kind, truncated_turns=res.truncated_turns,
                         usage=res.usage,
                         skill_loads=sorted(set(ex.skill_loads)), final_text=res.final_text[:4000],
-                        problems=ex.problems)
+                        problems=ex.problems, one_call_per_turn=self.one_call_per_turn,
+                        turns=res.turns, behaviour=res.behaviour())
             if tail.bad:
                 meta["mock_bad_lines"] = tail.bad
             agent_mod.dump_messages(res.messages, out / "messages.json")
+            # Thinking text (server reasoning_content or stripped <think> blocks); on disk only.
+            agent_mod.dump_messages(res.reasoning, out / "reasoning.json")
 
             t = time.monotonic()
             success = check_success(spec.task, sb)
