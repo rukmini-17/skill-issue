@@ -176,11 +176,13 @@ models:
     server: {ctx_size: 32768, gpu_memory_utilization: 0.95}
 
   # ---------------------------------------------------------------------- Tinker
-  # Base-model ID sampled directly through the OpenAI-compatible endpoint
-  # (tinker:// paths are only for trained checkpoints). $0.60 per million sampled
-  # tokens for Qwen3-8B (Models & Pricing, 2026-11-25). Not a pilot candidate by
-  # default (credit cap). Tool support in /chat/completions is undocumented, so
-  # tool_mode stays prompt; bench/harness/scripts/tinker_smoke.py checks it.
+  # Base-model IDs sampled directly through the OpenAI-compatible endpoint (tinker:// paths are
+  # only for trained checkpoints). tool_mode native: the smoke test (Qwen/Qwen3-8B, 2026-11-26)
+  # returned finish_reason tool_calls with structured tool_calls. Tinker bills prompt tokens
+  # (prefill) as well as sampled tokens; `price` is USD per million tokens, from Models &
+  # Pricing (thinkingmachines.ai/tinker/pricing and tinker-docs, read 2026-11-26). Where the two
+  # pages disagree the higher figure is used, so cost estimates err high. `price` drives
+  # meta.json cost_usd and the pilot's --max-cost-usd cap. ctx: the service's context.
   qwen3-8b-tinker:
     backend: tinker
     base_url: https://tinker.thinkingmachines.dev/services/tinker-prod/oai/api/v1
@@ -189,10 +191,42 @@ models:
     quantization: tinker-default
     hardware: tinker
     family: qwen3
-    tool_mode: prompt
+    tool_mode: native
     temperature: 0.2
     max_tokens: 4096
+    price: {prefill: 0.195, cached_prefill: 0.039, sample: 0.60}
     server: {ctx_size: 32768}
+
+  # Qwen3.6-35B-A3B (MoE, 3B active), 64K context. Prefill $0.45 (pricing page) / $0.54
+  # (docs): 0.54 used.
+  qwen3.6-35b-a3b-tinker:
+    backend: tinker
+    base_url: https://tinker.thinkingmachines.dev/services/tinker-prod/oai/api/v1
+    model: Qwen/Qwen3.6-35B-A3B
+    api_key_env: TINKER_API_KEY
+    quantization: tinker-default
+    hardware: tinker
+    family: qwen3
+    tool_mode: native
+    temperature: 0.2
+    max_tokens: 4096
+    price: {prefill: 0.54, cached_prefill: 0.108, sample: 1.335}
+    server: {ctx_size: 65536}
+
+  # Qwen3.8-27B (dense), 64K-context offering. About 4x the sample price of 35B-A3B.
+  qwen3.8-27b-tinker:
+    backend: tinker
+    base_url: https://tinker.thinkingmachines.dev/services/tinker-prod/oai/api/v1
+    model: Qwen/Qwen3.8-27B
+    api_key_env: TINKER_API_KEY
+    quantization: tinker-default
+    hardware: tinker
+    family: qwen3
+    tool_mode: native
+    temperature: 0.2
+    max_tokens: 4096
+    price: {prefill: 0.6975, cached_prefill: 0.1395, sample: 5.595}
+    server: {ctx_size: 65536}
 
   # qwen3-32b-tinker: removed. Qwen3-32B was retired on Tinker on 2026-06-12;
   # Qwen3-4B and Qwen3-14B are not offered there.

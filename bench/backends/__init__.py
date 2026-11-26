@@ -43,7 +43,7 @@ BACKENDS: dict[str, type[OpenAICompatModel]] = {
 META_KEYS = {"backend", "api_key_env", "notes", "partition", "candidate", "gpus", "mem"}
 CLIENT_KEYS = {"base_url", "model", "family", "temperature", "max_tokens", "seed", "timeout", "retries",
                "retry_backoff", "tool_mode", "thinking", "top_p", "extra_body", "model_file",
-               "quantization", "server", "hardware", "parallel_tool_calls"}
+               "quantization", "server", "hardware", "parallel_tool_calls", "price"}
 
 
 class ConfigError(ValueError):

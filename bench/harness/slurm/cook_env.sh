@@ -16,12 +16,18 @@ set +u                                      # /etc/profile and module scripts us
 . /etc/profile
 module purge
 CDB_PART="${CDB_PART:-${SLURM_JOB_PARTITION:-gtx}}"
+CDB_GPUS="${CDB_GPUS:-1}"                   # GPUs the model needs (models.yaml `gpus`); 0 = CPU-only job
+if [ "$CDB_GPUS" = 0 ]; then                # Tinker jobs: Python only, no llama.cpp, no GPU
+  module load python/3.13.15 2>/dev/null || module load llm-r580-llamacpp/2026.10 \
+    || { echo "module load python/3.13.15 failed"; exit 2; }
+else
 case "$CDB_PART" in
   gtx)    module load llm-r580-llamacpp/2026.10 || { echo "module load llm-r580-llamacpp/2026.10 failed"; exit 2; } ;;
   t4|rtx) module load llm-r615-llamacpp/2026.11 python/3.13.15 \
             || { echo "module load llm-r615-llamacpp/2026.11 python/3.13.15 failed"; exit 2; } ;;
   *)      echo "unknown partition $CDB_PART (expected gtx, t4 or rtx)"; exit 2 ;;
 esac
+fi
 # Node.js: COOK has no node module. A user install (Node v22.23.5 at ~/opt/node, see
 # PILOT.md) goes on PATH for every partition; npm needs it there (`#!/usr/bin/env node`).
 # The harness passes its PATH on to the sandbox, so agent commands see it too.
@@ -33,14 +39,18 @@ else
   echo "node/npm not found in CDB_NODE_DIR=$CDB_NODE_DIR (install Node at ~/opt/node, see PILOT.md)"; exit 2
 fi
 set -u
-CDB_GPUS="${CDB_GPUS:-1}"                   # GPUs the model needs (models.yaml `gpus`, via cook_submit.sh)
-: "${CUDA_VISIBLE_DEVICES:?Slurm GPU assignment is missing (submit with --gres=gpu:$CDB_GPUS)}"
-CDB_NGPU=$(echo "$CUDA_VISIBLE_DEVICES" | tr ',' '\n' | grep -c .)
-[ "$CDB_NGPU" -ge "$CDB_GPUS" ] \
-  || { echo "need $CDB_GPUS GPUs, Slurm gave $CDB_NGPU (CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES)"; exit 2; }
+if [ "$CDB_GPUS" != 0 ]; then
+  : "${CUDA_VISIBLE_DEVICES:?Slurm GPU assignment is missing (submit with --gres=gpu:$CDB_GPUS)}"
+  CDB_NGPU=$(echo "$CUDA_VISIBLE_DEVICES" | tr ',' '\n' | grep -c .)
+  [ "$CDB_NGPU" -ge "$CDB_GPUS" ] \
+    || { echo "need $CDB_GPUS GPUs, Slurm gave $CDB_NGPU (CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES)"; exit 2; }
+else
+  CDB_NGPU=0; CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-}"
+fi
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-4}"
 PY="${PYTHON:-.venv/bin/python}"
 export LLAMA_SERVER="${LLAMA_SERVER:-$(command -v llama-server || echo "${LLAMA_CPP_HOME:-}/bin/llama-server")}"
+[ "$CDB_GPUS" = 0 ] && LLAMA_SERVER="(none: CPU-only job)"
 "$PY" -c 'import sys, yaml, jsonschema, openai, httpx' \
   || { echo "harness Python $PY cannot import its dependencies under the $CDB_PART modules"; exit 2; }
 echo "partition $CDB_PART node $(hostname); modules: $(module -t list 2>&1 | tr '\n' ' ')"

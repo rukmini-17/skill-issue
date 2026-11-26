@@ -117,6 +117,7 @@ def turn_record(step: int, turn) -> dict:
     names = [c.name for c in turn.tool_calls]
     return {"step": step, "tool_calls": names, "finish_reason": turn.finish_reason,
             "completion_tokens": turn.usage.get("completion_tokens"),
+            "prompt_tokens": turn.usage.get("prompt_tokens"),
             "content_chars": len(turn.content or ""), "reasoning_chars": len(turn.reasoning or ""),
             "parsed_from_content": turn.parsed_from_content,
             "blind_write": "write_file" in names and bool(_LOOK & set(names))}
@@ -145,8 +146,8 @@ def run_agent(model: ChatModel, executor: ToolExecutor, system: str, user: str,
             res.model_seconds += turn.seconds
             if turn.finish_reason == "length":
                 res.truncated_turns += 1
-            for k in usage:
-                usage[k] += turn.usage.get(k, 0)
+            for k, v in turn.usage.items():         # + cached_prompt_tokens when the server reports it
+                usage[k] = usage.get(k, 0) + (v or 0)
             res.turns.append(turn_record(res.steps, turn))
             if turn.reasoning:
                 res.reasoning.append({"step": res.steps, "text": turn.reasoning})

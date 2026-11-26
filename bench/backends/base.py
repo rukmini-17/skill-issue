@@ -34,6 +34,7 @@ and ends the run with ``reason: error`` (meta.json ``agent_error_kind``).
 
 from __future__ import annotations
 
+import json
 import time
 import uuid
 from typing import Any
@@ -82,6 +83,47 @@ def classify(exc: Exception) -> BackendError:
     return BackendError("bad_response", f"{type(exc).__name__}: {exc}"[:2000])
 
 
+def cost_usd(usage: dict | None, price: dict | None) -> float | None:
+    """USD for ``usage`` at ``price`` (USD per million tokens: ``prefill``, ``cached_prefill``,
+    ``sample``). Tinker bills prompt tokens as prefill and sampled tokens as sample; cached
+    prefill is cheaper (80 % off). Prompt tokens the server did not report as cached are billed
+    at the full prefill price, so the estimate errs high. None without a price."""
+    if not price or usage is None:
+        return None
+    prompt = int(usage.get("prompt_tokens") or 0)
+    cached = min(int(usage.get("cached_prompt_tokens") or 0), prompt)
+    pre, cpre = float(price.get("prefill", 0)), float(price.get("cached_prefill", price.get("prefill", 0)))
+    return ((prompt - cached) * pre + cached * cpre
+            + int(usage.get("completion_tokens") or 0) * float(price.get("sample", 0))) / 1e6
+
+
+class Budget:
+    """A hard USD cap shared by every model call of one job (thread-safe). Before each request
+    the model asks ``reserve`` for that request's worst case (estimated prompt at full prefill
+    price + max_tokens at the sample price); if spent + worst case exceeds the cap, the request
+    is not sent and ``BackendError("budget")`` ends the run. After the response, ``add`` books
+    the real cost. So spending never passes the cap."""
+
+    def __init__(self, cap_usd: float):
+        import threading
+        self.cap = float(cap_usd)
+        self.spent = 0.0
+        self.refused = 0
+        self._lock = threading.Lock()
+
+    def reserve(self, worst_usd: float) -> None:
+        with self._lock:
+            if self.spent + worst_usd > self.cap:
+                self.refused += 1
+                raise BackendError("budget", f"job budget ${self.cap:.2f} reached "
+                                             f"(spent ${self.spent:.4f}, next call up to ${worst_usd:.4f})")
+
+    def add(self, usd: float | None) -> None:
+        if usd:
+            with self._lock:
+                self.spent += usd
+
+
 class OpenAICompatModel:
     """Any OpenAI-compatible endpoint. Decoding defaults follow D11 (agent temperature 0.2)."""
 
@@ -96,7 +138,8 @@ class OpenAICompatModel:
                  parallel_tool_calls: bool | None = False,
                  extra_body: dict | None = None, model_file: str | None = None,
                  quantization: str | None = None, server: dict | None = None,
-                 hardware: str | None = None, backend: str | None = None):
+                 hardware: str | None = None, backend: str | None = None,
+                 price: dict | None = None):
         from openai import OpenAI          # lazy, so tests without a model don't need it
         self.name = name
         self.base_url = base_url.rstrip("/")
@@ -125,6 +168,8 @@ class OpenAICompatModel:
         if backend:
             self.backend = backend
         self._api_key = api_key
+        self.price = dict(price) if price else None    # USD per million tokens (cost_usd)
+        self.budget: Budget | None = None              # set by the pilot (--max-cost-usd)
         self._server_info: dict | None = None
         # max_retries=0: retries are ours (classified, logged, backoff configurable)
         self._client = OpenAI(base_url=self.base_url, api_key=api_key or "none", timeout=timeout,
@@ -136,7 +181,7 @@ class OpenAICompatModel:
     def describe(self) -> dict:
         d = {"name": self.name, "backend": self.backend, "base_url": self.base_url, "model": self.model,
              "model_file": self.model_file, "quantization": self.quantization, "family": self.family,
-             "hardware": self.hardware, "tool_mode": self.tool_mode,
+             "hardware": self.hardware, "tool_mode": self.tool_mode, "price": self.price,
              "ctx_size": (self.server or {}).get("ctx_size"),
              "decoding": {"temperature": self.temperature, "max_tokens": self.max_tokens,
                           "seed": self.seed, "top_p": self.top_p, "thinking": self.thinking,
@@ -233,7 +278,7 @@ class OpenAICompatModel:
             try:
                 return self._client.chat.completions.create(**kw)
             except Exception as e:
-                err = classify(e)
+                err = self._redact(classify(e))
                 if err.kind not in RETRYABLE or attempt >= self.retries:
                     raise err from e
                 wait = self.retry_backoff * (2 ** attempt)
@@ -242,9 +287,29 @@ class OpenAICompatModel:
                 attempt += 1
                 time.sleep(wait)
 
+    def _redact(self, err: BackendError) -> BackendError:
+        """Never let the API key reach meta.json, messages or logs through an error text."""
+        key = self._api_key
+        if key and key != "none" and key in str(err):
+            red = BackendError(err.kind, str(err).replace(key, "<redacted>").split("] ", 1)[-1], err.status)
+            return red
+        return err
+
+    def worst_turn_cost(self, kw: dict) -> float:
+        """Upper estimate of one request's cost: prompt (JSON chars / 3) at full prefill price
+        plus max_tokens at the sample price."""
+        if not self.price:
+            return 0.0
+        chars = len(json.dumps(kw.get("messages") or [])) + len(json.dumps(kw.get("tools") or []))
+        return cost_usd({"prompt_tokens": chars // 3 + 1, "completion_tokens": kw.get("max_tokens") or 0},
+                        self.price) or 0.0
+
     def chat(self, messages: list[dict], tools: list[dict] | None = None) -> AssistantTurn:
         t0 = time.monotonic()
-        resp = self._create(self.build_request(messages, tools))
+        kw = self.build_request(messages, tools)
+        if self.budget is not None:
+            self.budget.reserve(self.worst_turn_cost(kw))
+        resp = self._create(kw)
         try:
             choice = resp.choices[0]
             msg = choice.message
@@ -260,6 +325,12 @@ class OpenAICompatModel:
         if resp.usage:
             turn.usage = {"prompt_tokens": resp.usage.prompt_tokens or 0,
                           "completion_tokens": resp.usage.completion_tokens or 0}
+            details = getattr(resp.usage, "prompt_tokens_details", None)
+            cached = getattr(details, "cached_tokens", None) if details is not None else None
+            if cached:
+                turn.usage["cached_prompt_tokens"] = int(cached)
+        if self.budget is not None:
+            self.budget.add(cost_usd(turn.usage, self.price) if turn.usage else self.worst_turn_cost(kw))
         turn.seconds = time.monotonic() - t0
         return turn
 

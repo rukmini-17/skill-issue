@@ -191,10 +191,27 @@ lists the 165 runs, and `.venv/bin/python -m bench.backends serve-cmd <model>` p
 
 **A100 (vLLM, bf16).** `bash bench/harness/scripts/pilot_vllm.sh qwen3-8b-vllm` (`WORKERS=4` by default).
 
-**Tinker (Qwen/Qwen3-8B, $0.60 per million sampled tokens).** First the one-call check:
-`TINKER_API_KEY=... .venv/bin/python bench/harness/scripts/tinker_smoke.py`. Then
-`MAX_TOKENS=<cap> bash bench/harness/scripts/pilot_tinker.sh qwen3-8b-tinker`, smoke-tested with
-`TASKS=ops-office-t05 REPEATS=1` first. Qwen3-32B is retired on Tinker; 4B/14B are not offered.
+**Tinker** (entries `qwen3-8b-tinker`, `qwen3.6-35b-a3b-tinker`, `qwen3.8-27b-tinker`; native
+tool calls; prices, which include prefill, in models.yaml and NOTES.md "Tinker pilot path"):
+
+```sh
+# one-call check per model (about $0.01 at most), on the login node or any compute node
+. ~/.tinker_key
+.venv/bin/python bench/harness/scripts/tinker_smoke.py --model qwen3.6-35b-a3b-tinker
+.venv/bin/python bench/harness/scripts/tinker_smoke.py --model qwen3.8-27b-tinker
+unset TINKER_API_KEY
+# CPU-only COOK job: explicit-v2, d9, 55 runs, 4 workers, hard cap MAX_COST_USD (default 5)
+MAX_COST_USD=0.5 TASKS=ops-office-t05 sh bench/harness/scripts/cook_submit.sh tinker-pilot qwen3.6-35b-a3b-tinker
+sh bench/harness/scripts/cook_submit.sh tinker-pilot qwen3.6-35b-a3b-tinker
+tail -f runs/tinker/logs/cdb-tinker-<jobid>.out
+```
+
+- The job sources `~/.tinker_key` itself (mode 600); don't export the key when submitting.
+- Rows go to `runs/pilot/<entry>+explicit-v2+d9/`. Resubmitting resumes, including runs the
+  cost cap stopped.
+- `pilot report --model <entry> --timing` shows the cost per run and in total.
+- Off COOK: `MAX_TOKENS=<cap> MAX_COST_USD=<usd> bash bench/harness/scripts/pilot_tinker.sh <entry>`.
+- Qwen3-32B is retired on Tinker; 4B and 14B are not offered.
 
 Outputs: `runs/pilot/<model>[+explicit-v2][+d9]/<task_id>/r<k>/` (`meta.json`, `trace.jsonl`,
 `success.json`, `messages.json`, `reasoning.json`, `mock.jsonl`, and from decision 9 on

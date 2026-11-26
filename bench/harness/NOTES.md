@@ -345,7 +345,7 @@ Checkpoint 4 (reference replay) is a joint A+B step and was skipped for now.
     gets `agent_error_kind`. The openai client's own retries are off.
   - `tool_mode: native` sends `tools`; `prompt` writes them into the system message the way
     Qwen3's chat template does, renders earlier calls as `<tool_call>` text and results as
-    `<tool_response>` user turns, and parses the reply. Tinker defaults to `prompt`.
+    `<tool_response>` user turns, and parses the reply. Tinker uses `native` (smoke test 2026-11-26).
   - `describe()` adds `server_info` (vLLM `/v1/models`: `max_model_len`, weights root;
     llama.cpp `/props`: model path, `n_ctx`); best effort, never fails a run.
 - `bench/configs/models.yaml` (**shared config, proposed, needs team approval**): Qwen3
@@ -399,6 +399,69 @@ Checkpoint 4 (reference replay) is a joint A+B step and was skipped for now.
 - The context window is not managed: 25 steps of up to 8,000-character outputs can exceed
   Qwen3-8B's 32k-token context, which then shows up as a model error. To size after the pilot.
 - The dev mock is not A's mock; behaviour may differ once A5 lands.
+
+## Tinker pilot path (2026-11-26; the team is open to changing the agent model)
+
+- **Smoke test** (human-run, Qwen/Qwen3-8B): the request with `tools` was accepted,
+  `finish_reason: tool_calls`, and structured `tool_calls` came back. All Tinker entries now
+  use `tool_mode: native` (the `TinkerModel` default too).
+  - `scripts/tinker_smoke.py --model <entry or Org/Name>` tests other models. It sends the
+    harness's own request (`build_request`: native tools, `parallel_tool_calls: false`).
+    Thinking stays on, with max_tokens 1024 (under $0.01 on every entry); `--no-think` and
+    `--tool-mode` are optional.
+- **Entries (models.yaml).** Prices in USD per million tokens, from the Tinker pricing page
+  and docs, read 2026-11-26:
+
+  | entry | model | ctx | prefill | cached prefill | sample |
+  |---|---|---|---|---|---|
+  | qwen3-8b-tinker | Qwen/Qwen3-8B | 32K | 0.195 | 0.039 | 0.60 |
+  | qwen3.6-35b-a3b-tinker | Qwen/Qwen3.6-35B-A3B (MoE, 3B active) | 64K | 0.54 | 0.108 | 1.335 |
+  | qwen3.8-27b-tinker | Qwen/Qwen3.8-27B | 64K | 0.6975 | 0.1395 | 5.595 |
+
+  **Tinker charges for prompt tokens too**, as prefill, and cached prefill is 80 % cheaper. For
+  35B-A3B, prefill is $0.45 on the pricing page and $0.54 in the docs; 0.54 is used, so
+  estimates err high. Prompt tokens are billed at full prefill price unless the server
+  reports them as cached (`usage.prompt_tokens_details.cached_tokens` →
+  `cached_prompt_tokens`).
+- **Cost per run:**
+  - `meta.json` gets `cost_usd` (from `usage` and the entry's `price`, which is also in
+    `model_config.price`);
+  - `progress.jsonl` gets `cost_usd` and `job_spent_usd`;
+  - `pilot report --timing` adds a cost column and a total.
+- **Hard cap per job:** `pilot run --max-cost-usd` (job default $5).
+  - A shared `Budget` checks each request's worst case before sending it: the prompt
+    (JSON chars / 3) at full prefill price, plus max_tokens at the sample price. A request
+    that could pass the cap is not sent, so spending never passes it.
+  - The run then ends as `run_end=error` with `agent_error_kind=budget`. Such runs are *not*
+    complete, so the next job reruns them.
+  - The pilot also stops starting runs at 98 % of the cap.
+- **CPU-only COOK job** (`slurm/tinker_pilot.sbatch`, via `cook_submit.sh tinker-pilot <model>`):
+  - Compute nodes reach Tinker (`srun curl` → HTTP 302). There is no `--gres`; the partition
+    is `CDB_CPU_PARTITION` (default gtx; change it if COOK refuses GPU-less jobs there).
+    8 CPUs and 16G memory.
+  - `cook_env.sh` CPU mode (`CDB_GPUS=0`) loads only `python/3.13.15` and skips the GPU check.
+  - The job checks that the venv imports openai and httpx, then runs `check_env --isolation
+    netns`.
+  - Pilot settings: netns isolation, strace observer (it fails if strace is missing), 4
+    workers, `RUN_TIMEOUT` 1200, deadline-aware. Defaults are explicit-v2, d9 and 1 repeat
+    (55 runs).
+- **Key handling:**
+  - The job sources `~/.tinker_key` (mode 600 or 400 required) with `set +x` and output
+    discarded, and prints only that it was loaded.
+  - `cook_submit.sh` unsets `TINKER_API_KEY` so `--export=ALL` doesn't copy it into Slurm's
+    saved job environment.
+  - The sandbox gives agent commands a clean environment (PATH only), so the agent cannot
+    read the key.
+  - Backend error texts are redacted (`<redacted>`) before they reach `meta.json`, messages
+    or logs, and `describe()` never contains the key.
+  - At the end the job greps the row's run files and its logs for the key, reading it from a
+    pipe rather than the command line. It prints only the count, and exits 4 if it is not 0.
+- **Expected cost of 55 runs (explicit, d9).** The 8B explicit row averaged about 8k prompt
+  and 4k completion tokens per run:
+  - 35B-A3B: about $0.01 per run, $0.5–1 for 55 runs;
+  - 27B: about $0.03 per run, $1.5–3 for 55 runs.
+
+  Thinking-heavy models can cost more; the $5 cap bounds it.
 
 ## COOK and Tinker facts (2026-11-25)
 
@@ -1021,8 +1084,8 @@ Findings:
 3. COOK, nearly closed. ctx 16384 loads on gtx/t4/rtx (jobs 3249–3251). gtx needs the `srun`
    launch; t4/rtx start directly. Still open: the buffer sizes for "Memory at 16384".
 4. A100: 40 or 80 GB (decides the vLLM 32B entry); is `vllm` installed in the venv or a separate env?
-5. Tinker, mostly answered (see above). Still open: whether `/chat/completions` accepts `tools`
-   (run `scripts/tinker_smoke.py`; if it returns structured `tool_calls`, try `tool_mode: native`).
+5. (closed, 2026-11-26) Tinker accepts `tools` and returns structured `tool_calls` (smoke test,
+   Qwen/Qwen3-8B), so Tinker entries use `tool_mode: native`. See "Tinker pilot path".
 6. (closed, team decision 6, 2026-11-26) One tool call per turn: see "Team decision 6" above.
 7. Skill loading: 8B almost never loads (0/96 natural, 4/96 explicit); 14B and 32B (jobs 3293/3294, explicit) load only skills
    that ship a script or install step the task needs, never know-how skills. See "Skill-load

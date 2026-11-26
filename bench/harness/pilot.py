@@ -103,6 +103,8 @@ def is_complete(d: Path, retry_agent_errors: bool = False) -> bool:
     m = read_meta(d)
     if not m or m.get("harness_error") or "success" not in m:
         return False
+    if m.get("agent_error_kind") == "budget":      # stopped by the job's cost cap: rerun later
+        return False
     return not (retry_agent_errors and m.get("run_end") == "error")
 
 
@@ -152,12 +154,26 @@ def cmd_run(a) -> int:
         return 0
 
     from bench.backends import make_model
+    from bench.backends.base import Budget
     m = make_model(a.model)
+    budget = Budget(a.max_cost_usd) if a.max_cost_usd else None
+    if budget is not None and not getattr(m, "price", None):
+        print(f"pilot: --max-cost-usd needs a price for {a.model} in models.yaml", file=sys.stderr)
+        return 3
     if not a.no_wait and not m.wait_ready(a.wait_s):
         print(f"pilot: model server for {a.model} not ready at {m.health_url()}", file=sys.stderr)
         return 3
 
-    harness = Harness(isolation=a.isolation, run_timeout=a.run_timeout, setup=a.setup)
+    from bench.harness.run import default_model_factory
+
+    def factory(name: str, seed: int):
+        model = default_model_factory(name, seed)
+        if budget is not None:
+            model.budget = budget               # one cap for every run of this job
+        return model
+
+    harness = Harness(model_factory=factory, isolation=a.isolation, observer=a.observer,
+                      run_timeout=a.run_timeout, setup=a.setup)
     progress = a.out / label / "progress.jsonl"
     progress.parent.mkdir(parents=True, exist_ok=True)
     stop_reason = None
@@ -167,6 +183,8 @@ def cmd_run(a) -> int:
             return "deadline"
         if a.max_total_tokens and tokens_used(a.out, label) >= a.max_total_tokens:
             return "token_budget"
+        if budget is not None and budget.spent >= budget.cap * 0.98:
+            return "cost_budget"
         return None
 
     def one(t: Task, r: int) -> dict:
@@ -178,6 +196,8 @@ def cmd_run(a) -> int:
                "run_end": meta.get("run_end"), "success": (meta.get("success") or {}).get("success"),
                "agent_error_kind": meta.get("agent_error_kind"), "harness_error": meta.get("harness_error"),
                "host": (meta.get("host") or {}).get("hostname"), "job": os.environ.get("SLURM_JOB_ID"),
+               "cost_usd": meta.get("cost_usd"),
+               "job_spent_usd": round(budget.spent, 4) if budget is not None else None,
                "time": time.strftime("%Y-%m-%dT%H:%M:%S")}
         with progress.open("a") as fh:
             fh.write(json.dumps(rec) + "\n")
@@ -201,7 +221,8 @@ def cmd_run(a) -> int:
                 f.result()
     left = sum(not is_complete(run_dir(a.out, label, t, r), a.retry_agent_errors) for t, r in todo)
     print(f"pilot {label}: shard {a.shard} finished; {left} runs left"
-          + (f" (stopped: {stop_reason})" if stop_reason else ""), file=sys.stderr)
+          + (f" (stopped: {stop_reason})" if stop_reason else "")
+          + (f"; spent ${budget.spent:.4f} of ${budget.cap:.2f}" if budget is not None else ""), file=sys.stderr)
     return 0 if left == 0 else 2
 
 
@@ -250,6 +271,7 @@ def collect(root: Path) -> list[dict]:
             "isolation": m.get("isolation"), "agent_s": (m.get("timings") or {}).get("agent_s"),
             "tokens": sum((m.get("usage") or {}).get(k, 0) for k in ("prompt_tokens", "completion_tokens")),
             "model_s": (m.get("timings") or {}).get("model_s"),
+            "cost_usd": m.get("cost_usd"),
             "prompt_tokens": (m.get("usage") or {}).get("prompt_tokens"),
             "completion_tokens": (m.get("usage") or {}).get("completion_tokens"),
             "reasoning_chars": (m.get("behaviour") or {}).get("reasoning_chars"),
@@ -380,6 +402,10 @@ def _per(a, b):
     return a / b if a is not None and b else None
 
 
+def _money(v) -> str:
+    return "-" if v is None else f"{v:.4f}"
+
+
 def _rate1(r: dict) -> str:
     """completion tokens per model second: about 20-30 on a healthy gtx node for 8B."""
     v = _per(r["completion_tokens"], r["model_s"])
@@ -393,7 +419,7 @@ def cmd_report(a) -> int:
     head = "| row | task | skill | invocation | skill_load | skill_used | success | run_end | steps | agent s |"
     if a.timing:
         head += (" model s | prompt tok | compl tok | compl tok/step | s/step | tok/s | reasoning chars |"
-                 " trunc | host |")
+                 " trunc | host | cost $ |")
     print(head)
     print("|---" * (head.count("|") - 1) + "|")
     for r in sorted(rows, key=lambda r: (r["model"], r["task_id"], r["repeat"])):
@@ -404,9 +430,13 @@ def cmd_report(a) -> int:
             line += (f" {_mean([r['model_s']])} | {r['prompt_tokens']} | {r['completion_tokens']} | "
                      f"{_mean([_per(r['completion_tokens'], r['steps'])])} | "
                      f"{_mean([_per(r['agent_s'], r['steps'])])} | {_rate1(r)} | {r['reasoning_chars']} | "
-                     f"{r['truncated_turns']}{' end' if r['ended_by_length'] else ''} | {r['host'] or '-'} |")
+                     f"{r['truncated_turns']}{' end' if r['ended_by_length'] else ''} | {r['host'] or '-'} | "
+                     f"{_money(r['cost_usd'])} |")
         print(line)
     done = [r for r in rows if r["complete"]]
+    costs = [r["cost_usd"] for r in rows if r.get("cost_usd") is not None]
+    if costs:
+        print(f"\ncost: ${sum(costs):.4f} over {len(costs)} runs (mean ${sum(costs) / len(costs):.4f}/run)")
     print(f"\n{len(done)} completed runs: skill_load {sum(bool(r['skill_loaded']) for r in done)}, "
           f"skill_used {sum(bool(r['skill_used']) for r in done)}, "
           f"success {sum(r['success'] is True for r in done)}")
@@ -558,6 +588,10 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--run-timeout", type=float, default=1800.0)
     r.add_argument("--deadline-s", type=float, default=0.0,
                    help="stop starting runs when fewer than run-timeout+120 s remain (0 = no deadline)")
+    r.add_argument("--max-cost-usd", type=float, default=0.0,
+                   help="hard USD cap for this job (needs `price` in models.yaml; 0 = none). No request "
+                        "is sent that could pass it; runs it stops are rerun on the next job")
+    r.add_argument("--observer", default="auto", help="auto | strace | none (strace: fail if missing)")
     r.add_argument("--max-total-tokens", type=int, default=0,
                    help="stop starting runs once this model's runs used this many tokens (Tinker credit)")
     r.add_argument("--wait-s", type=float, default=900.0, help="wait this long for the model server")

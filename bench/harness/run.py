@@ -295,6 +295,9 @@ class Harness:
                         final_text=res.final_text[:4000],
                         problems=ex.problems, one_call_per_turn=self.one_call_per_turn,
                         turns=res.turns, behaviour=res.behaviour(), nudges=res.nudges)
+            from bench.backends.base import cost_usd
+            cost = cost_usd(res.usage, (meta.get("model_config") or {}).get("price"))
+            meta["cost_usd"] = round(cost, 6) if cost is not None else None
             if tail.bad:
                 meta["mock_bad_lines"] = tail.bad
             agent_mod.dump_messages(res.messages, out / "messages.json")

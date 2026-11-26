@@ -353,7 +353,7 @@ def test_tinker_backend(tmp_path):
             make_model("fake", path=p, env={"CDB_T": bad, "TK": "k"})
     assert make_model("fake", path=p, env={"CDB_T": "Qwen/Qwen3-8B", "TK": "k"}).model == "Qwen/Qwen3-8B"
     m = make_model("fake", path=p, env={"CDB_T": "tinker://x/sampler_weights/1", "TK": "k"})
-    assert m.tool_mode == "prompt" and m.ready() is True
+    assert m.tool_mode == "native" and m.ready() is True     # smoke test 2026-11-26
     assert "server_info" not in m.describe()                     # no API call for metadata
 
 
