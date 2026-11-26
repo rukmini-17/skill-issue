@@ -73,7 +73,7 @@ def main(argv: list[str] | None = None) -> int:
         "run_dir": str(spec.out_dir), "isolation": meta.get("isolation"), "observer": meta.get("observer"),
         "mock": meta.get("mock"), "run_end": meta.get("run_end"), "steps": meta.get("steps"),
         "tool_calls": tools, "malformed_calls": len(meta.get("malformed_calls") or []),
-        "skill_loads": meta.get("skill_loads"), "success": (meta.get("success") or {}).get("success"),
+        "skill_loads": meta.get("skill_loads"), "skill_uses": meta.get("skill_uses"), "success": (meta.get("success") or {}).get("success"),
         "events": sorted({l["event"] for l in lines if "event" in l}),
         "timings": meta.get("timings"), "harness_error": meta.get("harness_error"),
         "agent_error": meta.get("agent_error"),

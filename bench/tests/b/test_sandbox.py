@@ -281,3 +281,20 @@ def test_attack_runs_refuse_env_mode(tmp_path):
         with pytest.raises(SandboxError):
             make_sandbox(REPOS / "orders-api", "http://127.0.0.1:9", isolation="auto",
                          require_network_isolation=True, work_root=tmp_path)
+
+
+def test_check_env_fails_loudly_on_a_missing_module(monkeypatch, capsys):
+    from bench.harness import check_env
+    real = check_env.requirement_lines
+    monkeypatch.setattr(check_env, "requirement_lines",
+                        lambda: real() + [("test", "cdb-definitely-not-installed", "")])
+    assert check_env.main(["--isolation", "env"]) == 1
+    err = capsys.readouterr().err
+    assert "ENVIRONMENT CHECK FAILED" in err and "cdb_definitely_not_installed" in err
+    assert "pip install -r bench/harness/requirements.txt" in err
+
+
+def test_check_env_requirements_cover_skill_files():
+    from bench.harness import check_env
+    dists = {d for _, d, _ in check_env.requirement_lines()}
+    assert {"markitdown", "pytest-cov", "coverage", "openpyxl", "pandas", "numpy", "pytest", "ruff"} <= dists

@@ -26,6 +26,9 @@ set -u
 cd "${SLURM_SUBMIT_DIR:-.}"
 mkdir -p runs/first_run/logs
 . bench/harness/slurm/cook_env.sh           # module load per partition; sets PY, LLAMA_SERVER
+# Fail before starting the server if the sandbox lacks a skill's or reference's dependency
+# (pilot run ops-office-t01 on COOK: the skill script could not run).
+"$PY" -m bench.harness.check_env --isolation netns || { echo "environment check failed; see above"; exit 2; }
 MODEL="${MODEL:-qwen3-8b-llamacpp}"
 TASK="${TASK:-ops-office-t05}"
 export CDB_PORT=$(( 20000 + ${SLURM_JOB_ID:-0} % 20000 ))

@@ -27,7 +27,8 @@ and writes the notes below. The team picks the models from these tables (D11).
 | tokens/run | prompt + completion tokens over the run |
 | runs with a multi-call turn | runs where some model turn requested more than one tool call (only the first ran) |
 | runs that wrote before reading | runs with a turn that had `write_file` alongside a read/list/request/command whose result the model had not seen |
-| skill loads per task | per task and row: runs that read the task's SKILL.md / runs that passed, plus the tasks whose skill was never loaded |
+| skill-use rate | the agent read, listed or ran anything under `.github/skills/<target>/` (`meta.json` → `skill_uses`), with or without reading SKILL.md |
+| skill loads per task | per task and row: runs that read the task's SKILL.md / runs that used its folder / runs that passed, plus the tasks whose skill was never loaded |
 | runs with thinking | runs where some turn returned reasoning text (`reasoning_content` or `<think>`) |
 
 Rates are over completed runs, with 95% Wilson intervals. The 3 repeats of a task
@@ -36,7 +37,10 @@ are not independent, so the intervals are too narrow; the scenario-level bootstr
 
 ## How to run
 
-All from the repo root, after `python3 -m venv .venv && .venv/bin/pip install pyyaml jsonschema pytest openpyxl openai httpx`.
+All from the repo root, after `python3 -m venv .venv && .venv/bin/pip install -r bench/harness/requirements.txt`
+(harness, skill scripts and delegated commands: markitdown, pandas, numpy, pytest-cov, ruff …),
+then `.venv/bin/python -m bench.harness.check_env --isolation netns`, which must print "environment OK".
+The COOK jobs run the same check before they start the server.
 Check first: `.venv/bin/python -m bench.harness.pilot run --model <model> --dry-run`
 lists the 165 runs, and `.venv/bin/python -m bench.backends serve-cmd <model>` prints the server command.
 

@@ -102,11 +102,12 @@ def test_deadline_and_token_budget_stop_new_runs(tmp_path, monkeypatch):
         assert pilot.tokens_used(tmp_path / "p", "f") == 240
 
 
-def _fake_run(root, model, task, rep, success, loaded, verdict=None, end="done", kind=None):
+def _fake_run(root, model, task, rep, success, loaded, verdict=None, end="done", kind=None, used=None):
     d = root / model / task / f"r{rep}"
     d.mkdir(parents=True)
     meta = {"task_id": task, "repo_id": task.rsplit("-t", 1)[0], "skill_id": "s",
-            "skill_loads": ["s"] if loaded else [], "run_end": end, "agent_error_kind": kind,
+            "skill_loads": ["s"] if loaded else [], "skill_uses": ["s"] if (loaded if used is None else used) else [],
+            "run_end": end, "agent_error_kind": kind,
             "success": {"success": success}, "steps": 3, "tool_calls": 2, "malformed_calls": [],
             "timings": {"agent_s": 10.0}, "usage": {"prompt_tokens": 50, "completion_tokens": 50},
             "model_config": {"backend": "llamacpp", "quantization": "Q4_K_M", "hardware": "cook-gtx"}}
@@ -127,7 +128,8 @@ def test_summary_tables_and_pilot_md_update(tmp_path):
     cells = [c.strip() for c in line.strip("|").split("|")]
     assert cells[:5] == ["q8", "llamacpp", "Q4_K_M", "cook-gtx", "4/165"]
     assert cells[5].startswith("50% ") and cells[6].startswith("67% ") and cells[7].startswith("50% ")
-    assert cells[8] == "3/0/0/1" and cells[11] == "100"
+    assert cells[8].startswith("50% ")                                  # skill-use rate
+    assert cells[9] == "3/0/0/1" and cells[12] == "100"
     assert "| q8 | context_length | 1 |" in t["errors"]
     assert "| q8 | shop-web | 2 | 50% " in t["per_repo"]
     lo, hi = pilot.wilson(5, 10)
@@ -202,13 +204,13 @@ def test_explicit_invocation_is_its_own_row(tmp_path, capsys):
 def test_skill_loads_per_task_table(tmp_path):
     root = tmp_path / "runs"
     _fake_run(root, "q8", "ops-office-t01", 0, True, True)
-    _fake_run(root, "q8", "ops-office-t01", 1, False, False)
+    _fake_run(root, "q8", "ops-office-t01", 1, False, False, used=True)    # listed the folder, no SKILL.md
     _fake_run(root, "q8", "shop-web-t02", 0, False, False)
     _fake_run(root, "q8+explicit", "shop-web-t02", 0, True, True)
     t = pilot.summarize(pilot.collect(root))["per_task"]
-    assert "| q8: skill loads / success | q8+explicit: skill loads / success |" in t.splitlines()[0]
-    assert "| ops-office-t01 | s | 1/2 / 1/2 | - |" in t
-    assert "| shop-web-t02 | s | 0/1 / 0/1 | 1/1 / 1/1 |" in t
+    assert "| q8: loaded / used / success | q8+explicit: loaded / used / success |" in t.splitlines()[0]
+    assert "| ops-office-t01 | s | 1/2 / 2/2 / 1/2 | - |" in t
+    assert "| shop-web-t02 | s | 0/1 / 0/1 / 0/1 | 1/1 / 1/1 / 1/1 |" in t
     assert "never loaded in any completed run (0): none" in t
     _fake_run(root, "q8", "shop-web-t03", 0, False, False)
     assert "(1): shop-web-t03" in pilot.summarize(pilot.collect(root))["per_task"]

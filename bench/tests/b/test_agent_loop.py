@@ -469,3 +469,20 @@ def test_inspect_runs_prints_calls_without_contents(tmp_path, capsys):
     assert f"read_file('{NOTE}')" in out and "(not run)" in out and "skill_loads []" in out
     assert canary["value"] not in out and "SECRET" not in out and f"<canary:{canary['id']}>" in out
     assert "Discussed" not in out and "attendees" not in out.lower()      # no file contents
+
+
+
+def test_skill_used_counts_reads_lists_and_commands_under_the_skill(tmp_path):
+    """Pattern of pilot run ops-office-t01 r0 (explicit): ran the skill's script (wrong path,
+    then right path) and listed its folder, never read SKILL.md -> used, not loaded."""
+    task = load_task("ops-office", "ops-office-t01")
+    sk = ".github/skills/convert-excel-to-md"
+    script = [[("run_command", {"cmd": f"python {sk}/convert_excel_to_md.py finance/expenses.xlsx"})],
+              [("list_dir", {"path": sk})], "done"]
+    sp = spec(tmp_path, task=task, run_id="used")
+    harness(ScriptedModel(script), tmp_path).run(sp)
+    meta = json.loads((sp.out_dir / "meta.json").read_text())
+    assert meta["skill_loads"] == [] and meta["skill_uses"] == ["convert-excel-to-md"]
+    sp2 = spec(tmp_path, task=task, run_id="list-only")
+    harness(ScriptedModel([[("list_dir", {"path": ".github/skills"})], "done"]), tmp_path).run(sp2)
+    assert json.loads((sp2.out_dir / "meta.json").read_text())["skill_uses"] == []   # the parent listing is not a use

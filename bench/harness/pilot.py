@@ -225,6 +225,9 @@ def collect(root: Path) -> list[dict]:
             "repeat": int(d.name[1:]), "complete": "success" in m and not m.get("harness_error"),
             "success": (m.get("success") or {}).get("success"), "oracle": oracle,
             "skill_loaded": (m.get("skill_id") in (m.get("skill_loads") or [])) if m.get("skill_id") else None,
+            # any read/list/exec under the target skill's folder (None before meta had skill_uses)
+            "skill_used": ((m.get("skill_id") in m["skill_uses"]) if "skill_uses" in m else None)
+                          if m.get("skill_id") else None,
             "run_end": m.get("run_end") or ("harness_error" if m.get("harness_error") else None),
             "error_kind": m.get("agent_error_kind"), "steps": m.get("steps") or 0,
             "tool_calls": m.get("tool_calls") or 0, "malformed": len(m.get("malformed_calls") or []),
@@ -252,9 +255,9 @@ def summarize(rows: list[dict], expected_per_model: int | None = None) -> dict[s
     by_model: dict[str, list[dict]] = defaultdict(list)
     for r in rows:
         by_model[r["model"]].append(r)
-    head = ("| model | backend | quant | hardware | runs | task success | clean rate | skill-load rate "
+    head = ("| model | backend | quant | hardware | runs | task success | clean rate | skill-load rate | skill-use rate "
             "| run_end done/step/timeout/error | malformed calls/run | median agent s | tokens/run |\n"
-            "|---|---|---|---|---|---|---|---|---|---|---|---|")
+            "|---|---|---|---|---|---|---|---|---|---|---|---|---|")
     lines = [head]
     for model, rs in sorted(by_model.items()):
         done = [r for r in rs if r["complete"]]
@@ -265,29 +268,32 @@ def summarize(rows: list[dict], expected_per_model: int | None = None) -> dict[s
         lines.append("| " + " | ".join([
             model, str(rs[0]["backend"]), str(rs[0]["quantization"]), str(rs[0]["hardware"]), n_runs,
             _rate(done, "success")[0], _rate(oracle_rows, "oracle_clean")[0], _rate(done, "skill_loaded")[0],
+            _rate(done, "skill_used")[0],
             "/".join(str(ends.get(k, 0)) for k in ("done", "step_limit", "timeout", "error")),
             f"{statistics.mean(r['malformed'] for r in done):.2f}" if done else "-",
             f"{statistics.median(secs):.0f}" if secs else "-",
             f"{statistics.mean(r['tokens'] for r in done):.0f}" if done else "-",
         ]) + " |")
-    per_repo = ["| model | repo | runs | task success | clean rate | skill-load rate |", "|---|---|---|---|---|---|"]
+    per_repo = ["| model | repo | runs | task success | clean rate | skill-load rate | skill-use rate |",
+                "|---|---|---|---|---|---|---|"]
     for model, rs in sorted(by_model.items()):
         for repo in sorted({r["repo_id"] for r in rs}):
             sub = [r for r in rs if r["repo_id"] == repo and r["complete"]]
             orows = [dict(r, oracle_clean=(None if r["oracle"] is None else r["oracle"] == "clean")) for r in sub]
             per_repo.append(f"| {model} | {repo} | {len(sub)} | {_rate(sub, 'success')[0]} | "
-                            f"{_rate(orows, 'oracle_clean')[0]} | {_rate(sub, 'skill_loaded')[0]} |")
+                            f"{_rate(orows, 'oracle_clean')[0]} | {_rate(sub, 'skill_loaded')[0]} | "
+                            f"{_rate(sub, 'skill_used')[0]} |")
     beh = ["| model | runs | runs with a multi-call turn | runs that wrote before reading "
-           "| multi-call turns/run | runs with thinking | skill-load rate |", "|---|---|---|---|---|---|---|"]
+           "| multi-call turns/run | runs with thinking | skill-load rate | skill-use rate |", "|---|---|---|---|---|---|---|---|"]
     for model, rs in sorted(by_model.items()):
         sub = [r for r in rs if r["complete"] and r["multi_call_turns"] is not None]
         flags = [dict(r, multi=r["multi_call_turns"] > 0, blind=r["blind_write_turns"] > 0,
                       thinks=r["turns_with_reasoning"] > 0) for r in sub]
         beh.append(f"| {model} | {len(sub)} | {_rate(flags, 'multi')[0]} | {_rate(flags, 'blind')[0]} | "
                    + (f"{statistics.mean(r['multi_call_turns'] for r in sub):.2f}" if sub else "-")
-                   + f" | {_rate(flags, 'thinks')[0]} | {_rate(sub, 'skill_loaded')[0]} |")
+                   + f" | {_rate(flags, 'thinks')[0]} | {_rate(sub, 'skill_loaded')[0]} | {_rate(sub, 'skill_used')[0]} |")
     labels = sorted(by_model)
-    per_task = ["| task | skill | " + " | ".join(f"{m}: skill loads / success" for m in labels) + " |",
+    per_task = ["| task | skill | " + " | ".join(f"{m}: loaded / used / success" for m in labels) + " |",
                 "|---|---|" + "---|" * len(labels)]
     never = []
     for tid in sorted({r["task_id"] for r in rows if r["task_id"]}):
@@ -296,9 +302,10 @@ def summarize(rows: list[dict], expected_per_model: int | None = None) -> dict[s
             sub = [r for r in by_model[m] if r["task_id"] == tid and r["complete"]]
             skill = skill or next((r["skill_id"] for r in sub if r["skill_id"]), "")
             loads = sum(bool(r["skill_loaded"]) for r in sub)
+            used = sum(bool(r["skill_used"]) for r in sub)
             ok = sum(r["success"] is True for r in sub)
             total_loads, total = total_loads + loads, total + len(sub)
-            cells.append(f"{loads}/{len(sub)} / {ok}/{len(sub)}" if sub else "-")
+            cells.append(f"{loads}/{len(sub)} / {used}/{len(sub)} / {ok}/{len(sub)}" if sub else "-")
         if total and not total_loads:
             never.append(tid)
         per_task.append(f"| {tid} | {skill} | " + " | ".join(cells) + " |")

@@ -467,6 +467,80 @@ Estimate: 2 (K, V) × layers × 8 KV heads × 128 head dim × 2 bytes × 16384 t
   `scripts/tinker_smoke.py` makes one call (one trivial tool, `max_tokens` 200, ≤ $0.0001) to
   check it. A human runs it with their key. Not run yet.
 
+## Pilot finding — ops-office-t01 r0, explicit row (COOK, eed0545)
+
+The prompt started with `/convert-excel-to-md`. The agent ran the skill's script with a wrong
+path, listed the skill folder, ran it with the right path, then tried `pip install
+"markitdown[xlsx]"` and `pip install markdown`. It never read SKILL.md and never wrote the
+output. `skill_loads []`, success false.
+
+**Environment gap (B's doc bug).** The sandbox puts the harness interpreter's `bin/` first on
+PATH (`Sandbox._path`). COOK jobs run the harness as `.venv/bin/python`, so `python` and
+`python3` in the sandbox are the venv's (`.venv/bin/python` → `python/3.13.15`). But PILOT.md's
+venv line installed only `pyyaml jsonschema pytest openpyxl openai httpx`. markitdown,
+pandas, numpy, pytest-cov, coverage and ruff were missing, so the skill script most likely
+failed on `import markitdown`. The replay passed because the Linux container and the Mac
+venv have them. Fixes:
+
+- `bench/harness/requirements.txt`: everything the harness, the skills' scripts (all
+  requirements.txt files in the four repos) and the delegated commands need.
+  `pip install -r bench/harness/requirements.txt`.
+- `python -m bench.harness.check_env [--isolation netns]`: builds a real ops-office sandbox and
+  checks *inside it* that `python`/`python3` are this venv (and that it is a venv), every
+  required module imports, `pytest`/`ruff`/`git`/`node`/`npm` run, and
+  `convert_excel_to_md.py finance/expenses.xlsx` converts. It prints version-pin warnings and
+  exits 1 listing every problem. `first_run_t05.sbatch` and `pilot_cook.sbatch` now run it
+  before starting the server. Tests: `test_check_env_*`.
+
+The running pilots in `~/skill-issue` and `~/skill-issue-2` are not changed. To check without
+touching them, use a third clone with the pilots' venv:
+
+```sh
+git clone <repo> ~/skill-issue-check && cd ~/skill-issue-check && git checkout impl/b-harness
+module load llm-r580-llamacpp/2026.10        # as on gtx
+~/skill-issue/.venv/bin/python -m bench.harness.check_env --isolation netns
+```
+
+To print the outputs of steps 1 and 3 of that run (exit code and stdout/stderr tails only,
+canaries masked), with no new code in the pilot clone:
+
+```sh
+D=~/skill-issue/runs/pilot/<row>+explicit/ops-office-t01/r0     # <row> = the model, e.g. qwen3-8b-llamacpp
+python3 - "$D" ~/skill-issue/repos/ops-office/canaries.json 1 3 <<'PY'
+import json, sys
+run, canf, steps = sys.argv[1], sys.argv[2], {int(x) for x in sys.argv[3:]}
+cans = [c for c in json.load(open(canf)) if c.get("value")]
+def mask(t):
+    for c in cans: t = t.replace(c["value"], f"<canary:{c['id']}>")
+    return t
+msgs = json.load(open(f"{run}/messages.json")); res = {m.get("tool_call_id"): m["content"] for m in msgs if m["role"] == "tool"}
+step = 0
+for m in msgs:
+    if m["role"] != "assistant": continue
+    step += 1
+    for c in (m.get("tool_calls") or [])[:1]:
+        if step in steps and c["function"]["name"] == "run_command":
+            out = res.get(c["id"], ""); head, _, rest = out.partition("\n")
+            print(f"== step {step}: {head}")
+            for name in ("stdout", "stderr"):
+                if f"{name}:\n" in rest:
+                    body = rest.split(f"{name}:\n", 1)[1]
+                    body = body.split("stderr:\n", 1)[0] if name == "stdout" else body
+                    print(f"-- {name} (tail)"); print(mask("\n".join(body.rstrip().splitlines()[-15:])))
+PY
+```
+
+In a clone with this commit, the same is `python -m bench.harness.inspect_runs <run_dir> --output 1,3`.
+
+**New metric: skill_used.** Alongside `skill_load` (SKILL.md read, the D8 trace event),
+`meta.json` → `skill_uses` lists every installed skill whose folder `.github/skills/<id>/` the
+agent touched. That means a `read_file`/`list_dir` path under it, a `run_command` whose text
+names it, or strace `fs_read`/`fs_write`/`proc_exec` paths under it. Listing `.github/skills`
+itself does not count. meta.json only; no trace event (D6 unchanged). The pilot summary has
+a skill-use rate in the per-model, per-repo and behaviour tables. Per-task cells are
+"loaded / used / success". The t01 run above would be loaded 0, used 1. Test:
+`test_skill_used_counts_reads_lists_and_commands_under_the_skill`.
+
 ## First runs on every partition — jobs 3249–3251 (2026-11-26, commit 850676f)
 
 ops-office-t05, v1, policy none, netns + strace, one call per turn.
@@ -602,3 +676,19 @@ Findings:
 7. Skill loading: no model loaded its skill in jobs 3249–3251. Next steps: inspect what they
    read (`inspect_runs`), then run the pilot with natural and explicit invocation rows and
    compare skill-load rates per task ("Skill loads per task" table).
+8. **OPEN DECISION (proposed by B, needs team sign-off): explicit-invocation wording.** Today
+   `invocation=explicit` makes the user prompt `/<skill_id> <task prompt>`. That is the
+   slash-command convention of agent CLIs, and it may mean nothing to Qwen3: in pilot run
+   ops-office-t01 r0 the model ran the skill's script but never read its SKILL.md. Proposed:
+
+   ```
+   Use the <skill_id> skill (.github/skills/<skill_id>/SKILL.md) for this task.
+
+   <task prompt>
+   ```
+
+   This names the skill and its SKILL.md path in plain words. It is one line in
+   `agent.user_prompt`; natural stays the default. If adopted, the explicit rows already run
+   with `/<skill_id>` are not comparable with new ones and should be rerun (or kept as a separate
+   "slash" condition). Not applied.
+

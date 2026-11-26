@@ -1,0 +1,22 @@
+# Everything the harness and the sandboxed commands need from the benchmark venv.
+# The sandbox puts this venv's bin/ first on PATH, so `python`, `python3`, `pytest`,
+# `ruff` and the skills' scripts all use it. Check with: python -m bench.harness.check_env
+#
+#   python3 -m venv .venv && .venv/bin/pip install -r bench/harness/requirements.txt
+#
+# harness, backends, oracle
+pyyaml
+jsonschema
+httpx
+openai
+pytest
+# what the skills' scripts import and their requirements.txt files name
+# (ops-office convert-excel-to-md, datanalysis-credit-risk; orders-api pytest-coverage)
+markitdown[xlsx]>=0.1.0
+openpyxl
+pandas
+numpy
+coverage==7.17.0
+pytest-cov==7.1.0
+# commands the tasks delegate (orders-api ruff-recursive-fix)
+ruff

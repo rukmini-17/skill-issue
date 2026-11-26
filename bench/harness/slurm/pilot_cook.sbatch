@@ -32,6 +32,9 @@ set -u
 cd "${SLURM_SUBMIT_DIR:-.}"
 mkdir -p runs/pilot/logs
 . bench/harness/slurm/cook_env.sh           # module load per partition; sets PY, LLAMA_SERVER
+# Fail before starting the server if the sandbox lacks a skill's or reference's dependency
+# (pilot run ops-office-t01 on COOK: the skill script could not run).
+"$PY" -m bench.harness.check_env --isolation netns || { echo "environment check failed; see above"; exit 2; }
 : "${MODEL:?set MODEL, e.g. --export=ALL,MODEL=qwen3-8b-llamacpp}"
 SHARDS="${SHARDS:-${SLURM_ARRAY_TASK_COUNT:-8}}"
 SHARD="${SLURM_ARRAY_TASK_ID:-0}"

@@ -188,7 +188,8 @@ class Harness:
                         malformed_calls=res.malformed, agent_error=res.error,
                         agent_error_kind=res.error_kind, truncated_turns=res.truncated_turns,
                         usage=res.usage,
-                        skill_loads=sorted(set(ex.skill_loads)), final_text=res.final_text[:4000],
+                        skill_loads=sorted(set(ex.skill_loads)), skill_uses=sorted(set(ex.skill_uses)),
+                        final_text=res.final_text[:4000],
                         problems=ex.problems, one_call_per_turn=self.one_call_per_turn,
                         turns=res.turns, behaviour=res.behaviour())
             if tail.bad:
