@@ -6,7 +6,7 @@ repos: [all]
 scenarios: all
 max_scenarios_per_repo: 1      # one scenario per repo
 policies: [none, pin_reapprove, new_permissions_only, capability_diff, deny_by_default_manifest, delegation_envelope]
-attackers: [stub]              # static replay arrives with D2
+attackers: [stub]              # stub on purpose: M0 smoke test only; use "static" for seed replay (D2)
 models: [qwen3-8b]
 invocations: [natural]
 repeats: 1

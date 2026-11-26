@@ -10,7 +10,17 @@
 | 4 adaptive attackers | **done except the stage-3 proposer (team-supplied); waiting for "continue"** |
 | 5 sweeps | not started (needs M1 and a go-ahead) |
 
-Branch `impl/d-attacks-runner`, cut from `origin/impl/c-policies`; `origin/impl/c-policies` (which already merged
+## M0 (D's part) — 2026-11-25
+
+- `origin/main` (B harness, C policies, A oracle/mock, `data-v1.1`) merged into this branch; no conflicts.
+- Full suite: 333 passed, 9 skipped (`.venv/bin/python -m pytest bench/tests`). Note: ops-office's `setup.sh`
+  runs the venv's `python3` and needs `openpyxl` (see `repos/ops-office/README.md`); without it 25 B tests fail
+  at sandbox setup. Install it in the venv.
+- M0 criterion: `python -m bench.runner bench/configs/experiments/dry_run.yaml --dry-run` runs one scenario per
+  repo (`*-s01`) x 6 policies = 24 episodes, all with `oracle.json`, 0 errors (12 agent runs reused via cache).
+- PR #2 retargeted to `main`. For humans: review and merge it to close M0.
+
+Branch `impl/d-attacks-runner`, originally cut from `origin/impl/c-policies`, now tracks `main`; `origin/impl/c-policies` (which already merged
 `main` at `data-v1`) is merged in, so the branch carries A's `bench/common`, oracle and mock. Run tests with `.venv/bin/python -m pytest bench/tests/d`.
 
 ## Checkpoint 1 — what was built
