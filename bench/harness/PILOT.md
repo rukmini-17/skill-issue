@@ -149,6 +149,35 @@ lists the 165 runs, and `.venv/bin/python -m bench.backends serve-cmd <model>` p
    the same command runs only those. Expect about 3 h of wall time in two waves, and about
    15 GPU-hours. Sizing details are in NOTES.md, "14B confirmation pilot".
 
+   **Tonight's three decision-9 rows (2026-11-26).** `REPEATS` sets the repeats per task
+   (default 3; keep it the same when resubmitting). `SHARDS` must equal the array size.
+
+   ```sh
+   # 1. 14B explicit-v2, 165 runs: 10 shards of 16-17, at most 3 t4 GPUs at once
+   INVOCATION=explicit REPEATS=3 RUN_TIMEOUT=1200 SHARDS=10 \
+     sh bench/harness/scripts/cook_submit.sh pilot qwen3-14b-llamacpp --array=0-9%3
+   # 2. 14B natural, r0 only, 55 runs: 4 shards of 13-14, at most 2 at once
+   INVOCATION=natural REPEATS=1 RUN_TIMEOUT=1200 SHARDS=4 \
+     sh bench/harness/scripts/cook_submit.sh pilot qwen3-14b-llamacpp --array=0-3%2
+   # 3. 32B explicit-v2, r0 only, 55 runs: 3 shards of 18-19, one at a time (rtx)
+   INVOCATION=explicit REPEATS=1 RUN_TIMEOUT=1200 SHARDS=3 \
+     sh bench/harness/scripts/cook_submit.sh pilot qwen3-32b-llamacpp --array=0-2%1
+   ```
+
+   - **Rows:** `qwen3-14b-llamacpp+explicit-v2+d9`, `qwen3-14b-llamacpp+d9` and
+     `qwen3-32b-llamacpp+explicit-v2+d9`, all under `runs/pilot/`.
+   - **Sizing:** a shard has about 88 min of run starts in its 2 h job.
+     - 14B: 17 runs × 4.4 min is 75 min and 14 × 4.4 is 62 min. At 6 min per run, about 2
+       runs per shard are left over for 1, and none for 2.
+     - 32B: 19 × 2.5 min (its skill-check mean) is 47 min. Above about 4.5 min per run, a few
+       runs are left over.
+   - **Wall time:** 1 runs in 4 waves, about 6–8 h. 2 runs in 2 waves, about 3–4 h. 3 runs in
+     3 waves, about 3–5 h.
+   - **GPUs and jobs:** 1 and 2 together hold up to 5 t4 GPUs. If the 3-GPU guide limit is for
+     all your t4 jobs, submit 2 with `--dependency=afterany:<job id of 1>`. The three arrays
+     are 17 Slurm jobs in all, above the 10-jobs-per-session cap (see NOTES.md).
+   - **Resubmitting** with the same command runs only the missing runs.
+
 **A100 (vLLM, bf16).** `bash bench/harness/scripts/pilot_vllm.sh qwen3-8b-vllm` (`WORKERS=4` by default).
 
 **Tinker (Qwen/Qwen3-8B, $0.60 per million sampled tokens).** First the one-call check:

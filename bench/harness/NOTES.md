@@ -606,6 +606,22 @@ repeats = 165 runs on t4.
   qwen3-14b-llamacpp --invocation explicit --shard 0/10 --dry-run`, which should print 17 runs.
   If a node misbehaves like the 8B shards 3–7, add `--exclude=<node>`.
 
+### Tonight's decision-9 rows (2026-11-26)
+
+The pilot job takes `REPEATS` (default 3), passed to `pilot run --repeats`.
+
+| row | runs | shards (`--array`) | runs/shard | throttle | expected |
+|---|---|---|---|---|---|
+| qwen3-14b-llamacpp+explicit-v2+d9 | 55 × 3 = 165 | 10 (`0-9%3`) | 16–17 | 3 t4 | 4 waves, about 6–8 h |
+| qwen3-14b-llamacpp+d9 (natural) | 55 × 1 | 4 (`0-3%2`) | 13–14 | 2 t4 | 2 waves, about 3–4 h |
+| qwen3-32b-llamacpp+explicit-v2+d9 | 55 × 1 | 3 (`0-2%1`) | 18–19 | 1 rtx | 3 waves, about 3–5 h |
+
+- **Sizing:** about 88 min of run starts per 2 h job, `RUN_TIMEOUT=1200`. The per-run times are
+  14B 4.4 min and 32B 2.5 min (skill-check means, n = 5).
+- **Job cap:** the three arrays are **17 Slurm jobs**, above the 10-jobs-per-session cap. The
+  human submitting decides whether to raise it for tonight or split the arrays over sessions;
+  1 alone is 10 jobs, and 2 + 3 together are 7. The submit commands are in PILOT.md, step 4.
+
 ## Success-check proposals for A (format-only; repos/ not edited)
 
 The proposals are machine-readable in `bench/harness/proposed_checks.yaml` (21 tasks). Each

@@ -157,7 +157,7 @@ def test_audit_sample_spreads_over_repos_and_skips_errors(tmp_path):
 
 def test_jobs_take_setup_and_run_timeout():
     sb = (ROOT / "bench/harness/slurm/pilot_cook.sbatch").read_text()
-    assert '--setup "${SETUP:-d9}" --run-timeout "${RUN_TIMEOUT:-1800}"' in sb
+    assert '--setup "${SETUP:-d9}" --run-timeout "${RUN_TIMEOUT:-1800}" --repeats "${REPEATS:-3}"' in sb
     assert "--array=0-9%6" in sb and "SHARDS=10" in sb
     assert '--setup "${SETUP:-d9}"' in (ROOT / "bench/harness/slurm/skill_check.sbatch").read_text()
     assert '--setup "${SETUP:-d9}"' in (ROOT / "bench/harness/slurm/first_run_t05.sbatch").read_text()
