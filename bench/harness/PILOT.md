@@ -25,7 +25,7 @@ and writes the notes below. The team picks the models from these tables (D11).
 | run_end | done (agent stopped) / step_limit (25) / timeout (1800 s) / error (backend or harness) |
 | malformed calls/run | tool calls the harness could not parse (returned to the model as errors) |
 | tokens/run | prompt + completion tokens over the run |
-| runs with a multi-call turn | runs where some model turn requested more than one tool call |
+| runs with a multi-call turn | runs where some model turn requested more than one tool call (only the first ran) |
 | runs that wrote before reading | runs with a turn that had `write_file` alongside a read/list/request/command whose result the model had not seen |
 | runs with thinking | runs where some turn returned reasoning text (`reasoning_content` or `<think>`) |
 
@@ -94,9 +94,13 @@ logs in `runs/pilot/logs/`.
 _No runs yet._
 <!-- pilot:tables:end -->
 
-The summary's "Behaviour" table counts multi-call turns, turns that wrote before reading,
-and turns with thinking (`meta.json` → `behaviour`). The one-tool-call-per-turn switch
-(NOTES.md, open decision 6) must be settled before the pilot and kept the same for every model.
+Agent settings for every pilot run (team decision 6): one tool call per turn (the harness
+runs the first call and returns a "not run" note for the rest) and `parallel_tool_calls:
+false` in native tool mode. Both are recorded in `meta.json` (`one_call_per_turn`,
+`model_config.decoding.parallel_tool_calls`). Don't turn them off for pilot runs;
+`run_task --all-calls-per-turn` is for debugging only. The "Behaviour" table counts turns where
+the model *asked* for several calls, turns that would have written before reading, and turns
+with thinking (`meta.json` → `behaviour`).
 
 ## Notes for the model choice
 

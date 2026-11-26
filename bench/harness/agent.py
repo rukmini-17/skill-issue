@@ -98,10 +98,10 @@ def turn_record(step: int, turn) -> dict:
 
 def run_agent(model: ChatModel, executor: ToolExecutor, system: str, user: str,
               max_steps: int = MAX_STEPS, timeout: float = RUN_TIMEOUT,
-              one_call_per_turn: bool = False) -> AgentResult:
-    """``one_call_per_turn`` (PROPOSED, off by default; NOTES.md open decision): run only
-    the first tool call of a turn and answer the others with ``SKIPPED_NOTE``, so the
-    model sees each result before acting on it."""
+              one_call_per_turn: bool = True) -> AgentResult:
+    """``one_call_per_turn`` (team decision 6, the default): run only the first tool call
+    of a turn and answer the others with ``SKIPPED_NOTE``, so the model sees each result
+    before acting on it. False only for debugging."""
     t0 = time.monotonic()
     messages: list[dict] = [{"role": "system", "content": system}, {"role": "user", "content": user}]
     res = AgentResult("done", 0, messages=messages)

@@ -17,6 +17,9 @@
 #   candidate       true = in the pilot (Qwen3-4B/8B/14B/32B, D11)
 #   tool_mode       native (server parses tool calls) | prompt (Qwen3 tool format in the prompt)
 #   thinking        null = model default (Qwen3: on); false/true sets enable_thinking
+#   parallel_tool_calls  default false (team decision 6): sent with native tool calls so the
+#                   server returns at most one call where it honours the field; null omits
+#                   it for a server that rejects it. The harness runs one call per turn anyway.
 #   server          settings for the command that starts the server (bench.backends serve-cmd).
 #                   server.ctx_size is the context window; it is recorded in meta.json
 #                   (model_config.ctx_size) because it affects results. Tinker: the

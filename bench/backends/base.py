@@ -93,6 +93,7 @@ class OpenAICompatModel:
                  seed: int | None = None, timeout: float = 600.0, retries: int = 3,
                  retry_backoff: float = 2.0, tool_mode: str | None = None,
                  thinking: bool | None = None, top_p: float | None = None,
+                 parallel_tool_calls: bool | None = False,
                  extra_body: dict | None = None, model_file: str | None = None,
                  quantization: str | None = None, server: dict | None = None,
                  hardware: str | None = None, backend: str | None = None):
@@ -111,6 +112,10 @@ class OpenAICompatModel:
         if self.tool_mode not in TOOL_MODES:
             raise ValueError(f"tool_mode must be one of {TOOL_MODES}, not {self.tool_mode!r}")
         self.thinking = thinking
+        # Team decision 6: ask the server for at most one tool call per turn (native tool mode
+        # only; null in models.yaml omits it for a server that rejects the field). The harness
+        # enforces one call per turn either way.
+        self.parallel_tool_calls = parallel_tool_calls
         self.top_p = top_p
         self.extra_body = dict(extra_body or {})
         self.model_file = model_file
@@ -135,6 +140,7 @@ class OpenAICompatModel:
              "ctx_size": (self.server or {}).get("ctx_size"),
              "decoding": {"temperature": self.temperature, "max_tokens": self.max_tokens,
                           "seed": self.seed, "top_p": self.top_p, "thinking": self.thinking,
+                          "parallel_tool_calls": self.parallel_tool_calls if self.tool_mode == "native" else None,
                           **({"extra_body": self.extra_body} if self.extra_body else {})}}
         info = self.server_info()
         if info:
@@ -206,6 +212,8 @@ class OpenAICompatModel:
         kw: dict[str, Any] = dict(model=self.model, temperature=self.temperature, max_tokens=self.max_tokens)
         if tools and self.tool_mode == "native":
             kw.update(messages=messages, tools=tools, tool_choice="auto")
+            if self.parallel_tool_calls is not None:
+                kw["parallel_tool_calls"] = self.parallel_tool_calls
         elif tools:
             kw["messages"] = hermes.to_prompt_messages(messages, tools)
         else:

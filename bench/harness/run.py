@@ -113,7 +113,7 @@ class Harness:
                  keep_workspace: bool = False, max_steps: int = agent_mod.MAX_STEPS,
                  run_timeout: float = agent_mod.RUN_TIMEOUT, ic2: bool = False,
                  prompt_path: Path | None = None, repos_dir: Path = REPOS,
-                 one_call_per_turn: bool = False):
+                 one_call_per_turn: bool = True):
         self.model_factory = model_factory or default_model_factory
         self.mock_kind = mock
         self.isolation = os.environ.get("CDB_ISOLATION", isolation)
@@ -125,7 +125,8 @@ class Harness:
         self.ic2 = ic2                       # pending IC-2; keep False until approved
         self.prompt_path = prompt_path or agent_mod.PROMPT_PATH
         self.repos_dir = Path(repos_dir)
-        # PROPOSED (needs team sign-off, NOTES.md open decision): run one tool call per turn.
+        # Team decision 6 (2026-11-26): one tool call per turn is the default for the pilot and
+        # all later runs; False only for debugging. Recorded in meta.json.
         self.one_call_per_turn = one_call_per_turn
 
     def run(self, spec: RunSpec) -> Path:

@@ -50,8 +50,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--isolation", default="auto")
     ap.add_argument("--observer", default="auto", choices=["auto", "strace", "none"])
     ap.add_argument("--judge", action="store_true", help="judge the trace with A's oracle")
-    ap.add_argument("--one-call-per-turn", action="store_true",
-                    help="PROPOSED, not the default: run only the first tool call per turn")
+    ap.add_argument("--all-calls-per-turn", action="store_true",
+                    help="debugging only: run every tool call of a turn (default: only the first, "
+                         "team decision 6)")
     ap.add_argument("--out", type=Path, default=REPO_ROOT / "runs" / "dev")
     ap.add_argument("--keep-workspace", action="store_true")
     a = ap.parse_args(argv)
@@ -64,7 +65,7 @@ def main(argv: list[str] | None = None) -> int:
                    policy=policy, model=a.model, invocation=a.invocation, mock_override=None,
                    out_dir=a.out / run_id, seed=a.seed)
     trace = Harness(isolation=a.isolation, observer=a.observer, keep_workspace=a.keep_workspace,
-                    one_call_per_turn=a.one_call_per_turn).run(spec)
+                    one_call_per_turn=not a.all_calls_per_turn).run(spec)
     meta = json.loads((spec.out_dir / "meta.json").read_text())
     lines = [json.loads(l) for l in trace.read_text().splitlines()]
     tools = [f"{l['tool']}:{l['status']}" for l in lines if "tool" in l and l["status"] != "requested"]
@@ -76,6 +77,8 @@ def main(argv: list[str] | None = None) -> int:
         "events": sorted({l["event"] for l in lines if "event" in l}),
         "timings": meta.get("timings"), "harness_error": meta.get("harness_error"),
         "agent_error": meta.get("agent_error"),
+        "one_call_per_turn": meta.get("one_call_per_turn"),
+        "parallel_tool_calls": ((meta.get("model_config") or {}).get("decoding") or {}).get("parallel_tool_calls"),
         "behaviour": meta.get("behaviour"),          # multi-call / blind-write turns, thinking
         "turns": [{k: t[k] for k in ("step", "tool_calls", "completion_tokens", "reasoning_chars",
                                      "blind_write")} for t in meta.get("turns") or []],

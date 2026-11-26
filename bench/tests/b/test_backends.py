@@ -16,6 +16,7 @@ from bench.backends import (BACKENDS, BackendError, ConfigError, LlamaCppModel, 
                             expand, load_models, make_model, model_config)
 from bench.backends import hermes
 from bench.backends.__main__ import main as backends_cli
+from bench.harness import agent as agent_mod
 from bench.harness.model import OpenAIChatModel
 from bench.harness.run import Harness
 from bench.harness.skills import repo_install_set
@@ -40,11 +41,13 @@ def model(tmp_path, srv, backend="vllm", **extra):
     return make_model(write_models(p, srv.base_url, backend, **extra), path=p)
 
 
-def run_t05(tmp_path, srv, backend="vllm", **extra):
+def run_t05(tmp_path, srv, backend="vllm", one_call_per_turn=False, **extra):
+    """The fake replies include a turn with two calls (protocol round trip), so the default
+    one-call-per-turn rule is off here unless a test asks for it."""
     p = tmp_path / "models.yaml"
     name = write_models(p, srv.base_url, backend, **extra)
     h = Harness(model_factory=lambda n, seed: make_model(n, path=p, seed=seed), isolation="env",
-                work_root=tmp_path / "work")
+                work_root=tmp_path / "work", one_call_per_turn=one_call_per_turn)
     spec = RunSpec(run_id="r1", scenario=None, task=T05, installed=repo_install_set(REPOS / "ops-office"),
                    policy=StubPolicy(), model=name, invocation="natural", mock_override=None,
                    out_dir=tmp_path / "run", seed=1)
@@ -81,6 +84,8 @@ def test_tool_call_round_trip_through_agent_loop(tmp_path):
     assert len(reqs) == 4
     first = reqs[0]
     assert first["model"] == "m" and first["temperature"] == 0.2 and first["seed"] == 1
+    assert first["parallel_tool_calls"] is False                  # team decision 6 (a)
+    assert meta["model_config"]["decoding"]["parallel_tool_calls"] is False
     assert first["tool_choice"] == "auto" and {t["function"]["name"] for t in first["tools"]} == {
         "read_file", "write_file", "list_dir", "run_command", "http_request"}
     # the second request carries the assistant's call and the tool result under the same id
@@ -428,3 +433,26 @@ def test_backends_cli(capsys, monkeypatch):
     out = capsys.readouterr().out
     assert "--jinja" in out and "--port 20002" in out and "Qwen3-8B-Q4_K_M.gguf" in out
     assert backends_cli(["list"]) == 0 and "qwen3-32b-vllm" in capsys.readouterr().out
+
+
+def test_parallel_tool_calls_setting(tmp_path):
+    with FakeOpenAI(replies=[{"role": "assistant", "content": "ok"}] * 2) as srv:
+        m = model(tmp_path, srv)
+        m.chat([{"role": "user", "content": "x"}], TOOL_SCHEMAS)
+        assert srv.requests[-1]["parallel_tool_calls"] is False
+        (tmp_path / "n").mkdir()
+        off = model(tmp_path / "n", srv, parallel_tool_calls=None)        # null: omit for a server that rejects it
+        off.chat([{"role": "user", "content": "x"}], TOOL_SCHEMAS)
+        assert "parallel_tool_calls" not in srv.requests[-1]
+    (tmp_path / "p").mkdir()
+    p = model(tmp_path / "p", srv, tool_mode="prompt")
+    assert "parallel_tool_calls" not in p.build_request([{"role": "user", "content": "x"}], TOOL_SCHEMAS)
+    assert p.describe()["decoding"]["parallel_tool_calls"] is None
+
+
+def test_default_one_call_per_turn_through_backend(tmp_path):
+    with FakeOpenAI(replies=t05_native_replies()) as srv:
+        trace, meta = run_t05(tmp_path, srv, one_call_per_turn=True)
+    assert meta["one_call_per_turn"] is True and meta["behaviour"]["skipped_calls"] == 1
+    m3 = srv.requests[2]["messages"]
+    assert m3[-1]["tool_call_id"] == "c3" and m3[-1]["content"] == agent_mod.SKIPPED_NOTE

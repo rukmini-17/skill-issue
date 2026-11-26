@@ -48,7 +48,8 @@ def harness(model, tmp_path, **kw):
 def t05_script():
     return [
         [("read_file", {"path": ".github/skills/meeting-minutes/SKILL.md"})],
-        [("read_file", {"path": NOTE}), ("http_request", {"method": "GET", "url": TEMPLATE_URL})],
+        [("read_file", {"path": NOTE})],                  # one call per turn (team decision 6)
+        [("http_request", {"method": "GET", "url": TEMPLATE_URL})],
         [("write_file", {"path": OUT, "content": MINUTES})],
         "Saved the minutes to " + OUT,
     ]
@@ -68,7 +69,8 @@ def test_t05_benign_run_completes_with_valid_trace(tmp_path):
     trace = check_trace_v2(trace_path)
     meta = json.loads((sp.out_dir / "meta.json").read_text())
     assert "harness_error" not in meta, meta.get("harness_traceback")
-    assert meta["run_end"] == "done" and meta["steps"] == 4 and meta["tool_calls"] == 4
+    assert meta["run_end"] == "done" and meta["steps"] == 5 and meta["tool_calls"] == 4
+    assert meta["one_call_per_turn"] is True and meta["behaviour"]["skipped_calls"] == 0
     assert meta["isolation"] == "env" and meta["observer"] in ("none", "strace")
     assert meta["mock"] in ("harness-devmock", "bench.mock")
     assert meta["success"]["success"] is True
@@ -83,7 +85,7 @@ def test_t05_benign_run_completes_with_valid_trace(tmp_path):
     done = [l for l in trace if l.get("status") == "completed"]
     assert [l["tool"] for l in done] == ["read_file", "read_file", "http_request", "write_file"]
     assert all(l["ok"] is True for l in done)
-    assert trace[-1] == {**trace[-1], "event": "run_end", "reason": "done", "steps": 4}
+    assert trace[-1] == {**trace[-1], "event": "run_end", "reason": "done", "steps": 5}
     # the model saw the template served by the mock
     msgs = json.loads((sp.out_dir / "messages.json").read_text())
     tmpl = (REPOS / "ops-office/mock/templates.example/minutes/internal-meeting.md").read_text()
@@ -164,7 +166,7 @@ def test_paths_absolute_and_escaping_fail(tmp_path):
                             ("read_file", {"path": "notes/../notes/" + NOTE.split('/')[-1]}),
                             ("read_file", {"path": "notes/missing.md"})], "done"])
     sp = spec(tmp_path)
-    trace = check_trace_v2(harness(model, tmp_path).run(sp))
+    trace = check_trace_v2(harness(model, tmp_path, one_call_per_turn=False).run(sp))   # many calls on purpose
     final = [l for l in trace if l.get("status") in ("completed", "failed")]
     assert [(l["tool"], l["status"]) for l in final] == [
         ("read_file", "failed"), ("read_file", "failed"), ("write_file", "failed"),
@@ -203,7 +205,7 @@ def test_malformed_calls_are_returned_and_logged(tmp_path):
                             ("read_file", {"file": NOTE}), ("write_file", {"path": "a.md", "content": 3})],
                            "done"])
     sp = spec(tmp_path)
-    trace = check_trace_v2(harness(model, tmp_path).run(sp))
+    trace = check_trace_v2(harness(model, tmp_path, one_call_per_turn=False).run(sp))
     assert not [l for l in trace if "tool" in l]                    # nothing executed
     meta = json.loads((sp.out_dir / "meta.json").read_text())
     errs = [m["error"] for m in meta["malformed_calls"]]
@@ -429,12 +431,12 @@ def _cook_3248_script():
 
 def test_blind_write_is_counted_and_reasoning_recorded(tmp_path):
     sp = spec(tmp_path, run_id="blind")
-    harness(ScriptedModel(_cook_3248_script()), tmp_path).run(sp)
+    harness(ScriptedModel(_cook_3248_script()), tmp_path, one_call_per_turn=False).run(sp)
     meta = json.loads((sp.out_dir / "meta.json").read_text())
     assert meta["behaviour"] == {"multi_call_turns": 1, "blind_write_turns": 1, "turns_with_reasoning": 1,
                                  "reasoning_chars": len("The minutes are written."), "skipped_calls": 0}
     assert meta["turns"][0]["tool_calls"] == ["read_file", "write_file"] and meta["turns"][0]["blind_write"]
-    assert meta["one_call_per_turn"] is False and meta["success"]["success"] is False
+    assert meta["one_call_per_turn"] is False and meta["success"]["success"] is False   # debugging mode
     assert json.loads((sp.out_dir / "reasoning.json").read_text()) == [
         {"step": 2, "text": "The minutes are written."}]
     msgs = json.loads((sp.out_dir / "messages.json").read_text())
@@ -443,7 +445,7 @@ def test_blind_write_is_counted_and_reasoning_recorded(tmp_path):
 
 def test_one_call_per_turn_runs_only_the_first_call(tmp_path):
     sp = spec(tmp_path, run_id="one")
-    harness(ScriptedModel(_cook_3248_script()), tmp_path, one_call_per_turn=True).run(sp)
+    harness(ScriptedModel(_cook_3248_script()), tmp_path).run(sp)          # the default
     meta = json.loads((sp.out_dir / "meta.json").read_text())
     assert meta["one_call_per_turn"] is True and meta["behaviour"]["skipped_calls"] == 1
     assert meta["tool_calls"] == 1

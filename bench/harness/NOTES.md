@@ -467,6 +467,26 @@ Estimate: 2 (K, V) × layers × 8 KV heads × 128 head dim × 2 bytes × 16384 t
   `scripts/tinker_smoke.py` makes one call (one trivial tool, `max_tokens` 200, ≤ $0.0001) to
   check it. A human runs it with their key. Not run yet.
 
+## Team decision 6 — one tool call per turn (2026-11-26)
+
+Adopted for the pilot and all later runs, after COOK job 3248 wrote a file in the same turn
+as the read it depended on:
+
+- **(b) The harness runs only the first tool call of each turn.** The rest get
+  `agent.SKIPPED_NOTE` ("not run: … make this call again if you still need it") and are
+  counted in `meta.json` → `behaviour.skipped_calls`. Default `Harness(one_call_per_turn=True)`;
+  `run_agent` defaults to it too. Debugging only: `Harness(one_call_per_turn=False)` /
+  `run_task --all-calls-per-turn`. The pilot runner and D's runner use the default.
+- **(a) `parallel_tool_calls: false` is sent** with native tool calls (client setting
+  `parallel_tool_calls`, default false; models.yaml `parallel_tool_calls: null` omits it for
+  a server that rejects the field). Prompt mode (Tinker) sends no `tools`, so nothing is sent.
+- Recorded in `meta.json`: `one_call_per_turn`, and `model_config.decoding.parallel_tool_calls`
+  (None in prompt mode). The behaviour table still counts multi-call turns: under (b) they show
+  how often the model asked for more than one call, not how many ran.
+- Tests: `test_one_call_per_turn_runs_only_the_first_call`,
+  `test_default_one_call_per_turn_through_backend`, `test_parallel_tool_calls_setting`.
+  `test_t05_benign_run_completes_with_valid_trace` uses one call per turn (5 steps).
+
 ## First real run — COOK job 3248 (2026-11-26)
 
 gtx, Qwen3-8B Q4_K_M (`qwen3-8b-llamacpp`), ops-office-t05, v1, policy none, netns + strace.
@@ -501,7 +521,7 @@ Findings:
    the "read its `SKILL.md` before you use a skill" instruction. Whether the order matters is a
    pilot question; D8 says nothing about order. The sort by id is B's choice, and it is
    deterministic across runs.
-2. **Parallel tool calls:** see open decision 6.
+2. **Parallel tool calls:** team decision 6 (above).
 3. **Thinking: cannot be told from job 3248.** `split_thinking` and the backend captured
    `reasoning_content` / `<think>` text, but the harness dropped it: it was in neither
    `messages.json` nor `meta.json`. Models default to thinking (`thinking: null`, so no
@@ -537,23 +557,4 @@ Findings:
 4. A100: 40 or 80 GB (decides the vLLM 32B entry); is `vllm` installed in the venv or a separate env?
 5. Tinker, mostly answered (see above). Still open: whether `/chat/completions` accepts `tools`
    (run `scripts/tinker_smoke.py`; if it returns structured `tool_calls`, try `tool_mode: native`).
-6. **OPEN DECISION (needs team sign-off): one tool call per turn.** Job 3248 wrote a file in
-   the same turn as the read it depended on. Options:
-   - (a) send `parallel_tool_calls: false`. No code needed: `extra_body: {parallel_tool_calls:
-     false}` per model in models.yaml. But it is only a request. We did not send it in job 3248,
-     and the model emitted two calls that the server returned as two calls. Whether
-     llama-server, vLLM's hermes parser and Tinker would actually limit the output to one call
-     is unverified, so it is not enough on its own.
-   - (b) the harness runs only the first tool call of each turn and answers the others with
-     a fixed note ("not run: … make this call again if you still need it"). This works the
-     same on every backend and is deterministic, and the model sees each result before
-     acting. Cost: more turns per task (step budget 25).
-     Implemented behind a switch, **off by default**: `Harness(one_call_per_turn=True)`,
-     `run_task --one-call-per-turn`. Recorded in `meta.json` (`one_call_per_turn`,
-     `behaviour.skipped_calls`). Tests: `test_one_call_per_turn_runs_only_the_first_call`.
-   - **B recommends (b), with (a) as well where the server honours it**, as the default for
-     the pilot and all later runs. It changes agent behaviour, so it must be fixed before the
-     pilot and used for every model and condition. The behaviour table measures how often
-     multi-call turns happen without it (run the pilot's first shard without it if the team
-     wants that baseline).
-
+6. (closed, team decision 6, 2026-11-26) One tool call per turn: see "Team decision 6" above.
