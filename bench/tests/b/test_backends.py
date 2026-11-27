@@ -16,6 +16,7 @@ from bench.backends import (BACKENDS, BackendError, ConfigError, LlamaCppModel, 
                             expand, load_models, make_model, model_config)
 from bench.backends import hermes
 from bench.backends.__main__ import main as backends_cli
+from bench.harness import agent as agent_mod
 from bench.harness.model import OpenAIChatModel
 from bench.harness.run import Harness
 from bench.harness.skills import repo_install_set
@@ -40,11 +41,13 @@ def model(tmp_path, srv, backend="vllm", **extra):
     return make_model(write_models(p, srv.base_url, backend, **extra), path=p)
 
 
-def run_t05(tmp_path, srv, backend="vllm", **extra):
+def run_t05(tmp_path, srv, backend="vllm", one_call_per_turn=False, **extra):
+    """The fake replies include a turn with two calls (protocol round trip), so the default
+    one-call-per-turn rule is off here unless a test asks for it."""
     p = tmp_path / "models.yaml"
     name = write_models(p, srv.base_url, backend, **extra)
     h = Harness(model_factory=lambda n, seed: make_model(n, path=p, seed=seed), isolation="env",
-                work_root=tmp_path / "work")
+                work_root=tmp_path / "work", one_call_per_turn=one_call_per_turn)
     spec = RunSpec(run_id="r1", scenario=None, task=T05, installed=repo_install_set(REPOS / "ops-office"),
                    policy=StubPolicy(), model=name, invocation="natural", mock_override=None,
                    out_dir=tmp_path / "run", seed=1)
@@ -81,6 +84,8 @@ def test_tool_call_round_trip_through_agent_loop(tmp_path):
     assert len(reqs) == 4
     first = reqs[0]
     assert first["model"] == "m" and first["temperature"] == 0.2 and first["seed"] == 1
+    assert first["parallel_tool_calls"] is False                  # team decision 6 (a)
+    assert meta["model_config"]["decoding"]["parallel_tool_calls"] is False
     assert first["tool_choice"] == "auto" and {t["function"]["name"] for t in first["tools"]} == {
         "read_file", "write_file", "list_dir", "run_command", "http_request"}
     # the second request carries the assistant's call and the tool result under the same id
@@ -326,6 +331,10 @@ def test_server_commands():
     assert cmd[0] == "/opt/llama-server" and cmd[cmd.index("-m") + 1] == "/m/Qwen3-8B-Q4_K_M.gguf"
     assert "--jinja" in cmd and cmd[cmd.index("--port") + 1] == "8124" and cmd[cmd.index("-np") + 1] == "1"
     assert cmd[cmd.index("--host") + 1] == "127.0.0.1" and cmd[-1] == "--no-mmap"
+    assert "--flash-attn" not in cmd                              # build default unless set
+    off = LlamaCppModel("l", "http://127.0.0.1:8124/v1", "q", model_file="/m/x.gguf",
+                        server={"flash_attn": False}).server_command()
+    assert off[off.index("--flash-attn") + 1] == "off"
     with pytest.raises(ValueError):
         LlamaCppModel("l", "http://x/v1", "m").server_command()
     with pytest.raises(NotImplementedError):
@@ -339,10 +348,12 @@ def test_tinker_backend(tmp_path):
         make_model("fake", path=p, env={"TK": "k"})
     with pytest.raises(ConfigError, match="TK"):
         make_model("fake", path=p, env={"CDB_T": "tinker://x/sampler_weights/1"})
-    with pytest.raises(ValueError, match="tinker://"):
-        make_model("fake", path=p, env={"CDB_T": "Qwen/Qwen3-8B", "TK": "k"})
+    for bad in ("qwen3-8b", "Qwen/Qwen3-8B/extra", "http://x/y"):
+        with pytest.raises(ValueError, match="tinker://"):
+            make_model("fake", path=p, env={"CDB_T": bad, "TK": "k"})
+    assert make_model("fake", path=p, env={"CDB_T": "Qwen/Qwen3-8B", "TK": "k"}).model == "Qwen/Qwen3-8B"
     m = make_model("fake", path=p, env={"CDB_T": "tinker://x/sampler_weights/1", "TK": "k"})
-    assert m.tool_mode == "prompt" and m.ready() is True
+    assert m.tool_mode == "native" and m.ready() is True     # smoke test 2026-11-26
     assert "server_info" not in m.describe()                     # no API call for metadata
 
 
@@ -380,7 +391,7 @@ def test_cdb_models_env_and_run_seed(tmp_path, monkeypatch):
 def test_shipped_models_yaml(monkeypatch):
     monkeypatch.delenv("CDB_MODELS", raising=False)
     cfg = load_models()
-    env = {"CDB_TINKER_QWEN3_8B": "tinker://x/s/1", "CDB_TINKER_QWEN3_32B": "tinker://y/s/1", "TINKER_API_KEY": "k"}
+    env = {"TINKER_API_KEY": "k"}
     for name in cfg:
         m = make_model(name, env=env)
         assert m.temperature == 0.2 and m.family == "qwen3" and m.quantization and m.hardware
@@ -391,7 +402,20 @@ def test_shipped_models_yaml(monkeypatch):
     assert cands == {(b, s) for b in ("vllm", "llamacpp") for s in ("4b", "8b", "14b", "32b")}
     parts = {n: c["partition"] for n, c in cfg.items() if c["backend"] == "llamacpp"}
     assert parts == {"qwen3-4b-llamacpp": "gtx", "qwen3-8b-llamacpp": "gtx", "qwen3-14b-llamacpp": "t4",
-                     "qwen3-32b-llamacpp": "rtx"}
+                     "qwen3-32b-llamacpp": "rtx", "qwen3-32b-llamacpp-gtx4": "gtx"}
+    for n, c in cfg.items():                                     # ctx recorded per entry
+        assert make_model(n, env=env).describe()["ctx_size"] == (c.get("server") or {}).get("ctx_size"), n
+        if c["backend"] == "llamacpp":
+            assert c["server"]["ctx_size"] == 16384 and c["server"]["flash_attn"] is False, n
+            cmd = make_model(n, env={**env, "SLURM_CPUS_PER_TASK": "6"}).server_command()
+            flags = {cmd[i]: cmd[i + 1] for i in range(len(cmd) - 1) if cmd[i].startswith("-")}
+            assert {k: flags[k] for k in ("-ngl", "-sm", "--flash-attn", "-fit", "-b", "-ub", "-t", "-c")} == {
+                "-ngl": "999", "-sm": "layer" if c.get("gpus", 1) > 1 else "none", "--flash-attn": "off", "-fit": "off", "-b": "128", "-ub": "128",
+                "-t": "6", "-c": "16384"}, n                         # CSCF's validated COOK flags
+            assert "--temp" not in cmd and "--top-k" not in cmd, n  # decoding stays in the request
+            assert "-GGUF/" in c["model_file"] and c["model_file"].endswith("-Q4_K_M.gguf"), n
+    assert make_model("qwen3-8b-tinker", env=env).model == "Qwen/Qwen3-8B"
+    assert "qwen3-32b-tinker" not in cfg                         # retired on Tinker 2026-06-12
     assert model_config("qwen3-8b-llamacpp", env={"CDB_PORT": "20001"})["base_url"] == "http://127.0.0.1:20001/v1"
     assert make_model("qwen3-8b-llamacpp", env={"CDB_PORT": "20001"}).port == 20001
     text = (ROOT / "bench/configs/models.yaml").read_text().lower()
@@ -409,3 +433,26 @@ def test_backends_cli(capsys, monkeypatch):
     out = capsys.readouterr().out
     assert "--jinja" in out and "--port 20002" in out and "Qwen3-8B-Q4_K_M.gguf" in out
     assert backends_cli(["list"]) == 0 and "qwen3-32b-vllm" in capsys.readouterr().out
+
+
+def test_parallel_tool_calls_setting(tmp_path):
+    with FakeOpenAI(replies=[{"role": "assistant", "content": "ok"}] * 2) as srv:
+        m = model(tmp_path, srv)
+        m.chat([{"role": "user", "content": "x"}], TOOL_SCHEMAS)
+        assert srv.requests[-1]["parallel_tool_calls"] is False
+        (tmp_path / "n").mkdir()
+        off = model(tmp_path / "n", srv, parallel_tool_calls=None)        # null: omit for a server that rejects it
+        off.chat([{"role": "user", "content": "x"}], TOOL_SCHEMAS)
+        assert "parallel_tool_calls" not in srv.requests[-1]
+    (tmp_path / "p").mkdir()
+    p = model(tmp_path / "p", srv, tool_mode="prompt")
+    assert "parallel_tool_calls" not in p.build_request([{"role": "user", "content": "x"}], TOOL_SCHEMAS)
+    assert p.describe()["decoding"]["parallel_tool_calls"] is None
+
+
+def test_default_one_call_per_turn_through_backend(tmp_path):
+    with FakeOpenAI(replies=t05_native_replies()) as srv:
+        trace, meta = run_t05(tmp_path, srv, one_call_per_turn=True)
+    assert meta["one_call_per_turn"] is True and meta["behaviour"]["skipped_calls"] == 1
+    m3 = srv.requests[2]["messages"]
+    assert m3[-1]["tool_call_id"] == "c3" and m3[-1]["content"] == agent_mod.SKIPPED_NOTE

@@ -2,8 +2,8 @@
 
 ``run_agent`` drives one model through one task:
 
-* messages = system prompt (D8 skill list) + the task prompt (``/<skill_id> ``
-  prefixed for ``invocation: explicit``);
+* messages = system prompt (D8 skill list) + the task prompt (for ``invocation:
+  explicit``, preceded by ``EXPLICIT_PREFIX``, team decision 8);
 * each model turn may call tools; each call goes through ``ToolExecutor``;
 * malformed calls (unknown tool, bad JSON, wrong arguments) are returned to the
   model as errors and logged (``AgentResult.malformed``); they are not executed
@@ -11,6 +11,9 @@
 * stop when a turn has no tool call (``done``), at ``max_steps`` model turns
   (``step_limit``), at the wall-clock budget (``timeout``) or on a model or
   harness error (``error``). ``run_end`` is written in every case.
+* decision 9 (setup ``d9``): a turn cut off by max_tokens (``finish_reason=length``)
+  with no tool call is not taken as the answer. The model gets ``TRUNCATION_NUDGE``
+  once; a second such turn ends the run as ``truncated``.
 """
 
 from __future__ import annotations
@@ -27,6 +30,18 @@ from bench.harness.tools import TOOL_SCHEMAS, MalformedCall, ToolExecutor, parse
 PROMPT_PATH = Path(__file__).with_name("prompts") / "system.md"
 MAX_STEPS = 25                  # D11
 RUN_TIMEOUT = 1800.0            # seconds of wall clock per agent run (B; revisit after the pilot)
+
+
+# Agent setups. A pilot row is one setup; rows of different setups are not mixed.
+#   pre-d9: the early pilot (c7801d0): models.yaml max_tokens (4096), no nudge.
+#   d9:     team decision 9 (2026-11-26): max_tokens 8192 and one truncation nudge.
+SETUPS: dict[str, dict] = {
+    "pre-d9": {"max_tokens": None, "truncation_nudge": False},
+    "d9": {"max_tokens": 8192, "truncation_nudge": True},
+}
+DEFAULT_SETUP = "d9"
+TRUNCATION_NUDGE = ("Your previous reply was cut off at the token limit before it made a tool call. "
+                    "Reply now with one tool call, or with your final answer if the task is complete.")
 
 
 def load_template(path: Path = PROMPT_PATH) -> str:
@@ -50,13 +65,23 @@ def system_prompt(workspace: Path, installed: dict, template: str | None = None)
     return (template or load_template()).replace("{skills}", skill_lines(workspace, installed))
 
 
+# Team decision 8 (2026-11-26): plain-words explicit invocation. It replaced
+# "/<skill_id> <task prompt>" (form "slash", which Qwen3 did not act on in pilot run
+# ops-office-t01 r0). EXPLICIT_FORM is recorded in meta.json; the pilot keeps the two
+# forms in separate rows.
+EXPLICIT_FORM = "v2"
+EXPLICIT_PREFIX = "Use the {skill_id} skill (.github/skills/{skill_id}/SKILL.md) for this task.\n\n"
+
+
 def user_prompt(task_prompt: str, skill_id: str, invocation: str) -> str:
-    return f"/{skill_id} {task_prompt}" if invocation == "explicit" else task_prompt
+    if invocation == "explicit":
+        return EXPLICIT_PREFIX.format(skill_id=skill_id) + task_prompt
+    return task_prompt
 
 
 @dataclass
 class AgentResult:
-    reason: str                       # done | step_limit | timeout | error
+    reason: str                       # done | step_limit | timeout | error | truncated (d9)
     steps: int                        # model turns
     tool_calls: int = 0
     malformed: list[dict] = field(default_factory=list)
@@ -67,10 +92,44 @@ class AgentResult:
     model_seconds: float = 0.0
     usage: dict[str, int] = field(default_factory=dict)
     messages: list[dict] = field(default_factory=list)
+    turns: list[dict] = field(default_factory=list)       # per model turn (meta.json "turns")
+    reasoning: list[dict] = field(default_factory=list)   # {"step", "text"} -> reasoning.json
+    skipped_calls: int = 0                                # one_call_per_turn: calls not run
+    nudges: int = 0                                       # d9 truncation nudges sent (0 or 1)
+    error_body: str | None = None                         # server's response body on an HTTP error
+
+    def behaviour(self) -> dict:
+        """Run-level counts from ``turns`` (meta.json; pilot "behaviour" table)."""
+        t = self.turns
+        return {"multi_call_turns": sum(len(x["tool_calls"]) > 1 for x in t),
+                "blind_write_turns": sum(x["blind_write"] for x in t),
+                "turns_with_reasoning": sum(x["reasoning_chars"] > 0 for x in t),
+                "reasoning_chars": sum(x["reasoning_chars"] for x in t),
+                "skipped_calls": self.skipped_calls}
+
+
+# A write composed in the same turn as calls whose results the model has not seen yet.
+_LOOK = {"read_file", "list_dir", "http_request", "run_command"}
+SKIPPED_NOTE = ("not run: this harness runs one tool call per turn, so only your first call was "
+                "executed. Look at its result, then make this call again if you still need it.")
+
+
+def turn_record(step: int, turn) -> dict:
+    names = [c.name for c in turn.tool_calls]
+    return {"step": step, "tool_calls": names, "finish_reason": turn.finish_reason,
+            "completion_tokens": turn.usage.get("completion_tokens"),
+            "prompt_tokens": turn.usage.get("prompt_tokens"),
+            "content_chars": len(turn.content or ""), "reasoning_chars": len(turn.reasoning or ""),
+            "parsed_from_content": turn.parsed_from_content,
+            "blind_write": "write_file" in names and bool(_LOOK & set(names))}
 
 
 def run_agent(model: ChatModel, executor: ToolExecutor, system: str, user: str,
-              max_steps: int = MAX_STEPS, timeout: float = RUN_TIMEOUT) -> AgentResult:
+              max_steps: int = MAX_STEPS, timeout: float = RUN_TIMEOUT,
+              one_call_per_turn: bool = True, truncation_nudge: bool = False) -> AgentResult:
+    """``one_call_per_turn`` (team decision 6, the default): run only the first tool call
+    of a turn and answer the others with ``SKIPPED_NOTE``, so the model sees each result
+    before acting on it. False only for debugging."""
     t0 = time.monotonic()
     messages: list[dict] = [{"role": "system", "content": system}, {"role": "user", "content": user}]
     res = AgentResult("done", 0, messages=messages)
@@ -88,19 +147,34 @@ def run_agent(model: ChatModel, executor: ToolExecutor, system: str, user: str,
             res.model_seconds += turn.seconds
             if turn.finish_reason == "length":
                 res.truncated_turns += 1
-            for k in usage:
-                usage[k] += turn.usage.get(k, 0)
+            for k, v in turn.usage.items():         # + cached_prompt_tokens when the server reports it
+                usage[k] = usage.get(k, 0) + (v or 0)
+            res.turns.append(turn_record(res.steps, turn))
+            if turn.reasoning:
+                res.reasoning.append({"step": res.steps, "text": turn.reasoning})
             msg: dict = {"role": "assistant", "content": turn.content}
             if turn.tool_calls:
                 msg["tool_calls"] = [{"id": c.id, "type": "function",
                                       "function": {"name": c.name, "arguments": c.arguments}}
                                      for c in turn.tool_calls]
             messages.append(msg)
+            if not turn.tool_calls and truncation_nudge and turn.finish_reason == "length":
+                if res.nudges == 0:                 # decision 9: one nudge, then give up
+                    res.nudges += 1
+                    messages.append({"role": "user", "content": TRUNCATION_NUDGE})
+                    continue
+                res.final_text = turn.content
+                res.reason = "truncated"
+                break
             if not turn.tool_calls:
                 res.final_text = turn.content
                 res.reason = "done"
                 break
-            for c in turn.tool_calls:
+            for i, c in enumerate(turn.tool_calls):
+                if one_call_per_turn and i > 0:
+                    res.skipped_calls += 1
+                    messages.append({"role": "tool", "tool_call_id": c.id, "content": SKIPPED_NOTE})
+                    continue
                 try:
                     args = parse_call(c.name, c.arguments)
                 except MalformedCall as e:
@@ -117,6 +191,7 @@ def run_agent(model: ChatModel, executor: ToolExecutor, system: str, user: str,
     except Exception as e:                                    # model/server failure: record, don't crash
         res.reason = "error"
         res.error = f"{type(e).__name__}: {e}"
+        res.error_body = getattr(e, "body", None)            # HTTP error body (BackendError)
         res.error_kind = getattr(e, "kind", None)
     res.usage = usage
     executor.trace.event("run_end", reason=res.reason, steps=res.steps)

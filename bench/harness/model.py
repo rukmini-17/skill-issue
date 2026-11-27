@@ -105,8 +105,8 @@ class ScriptedModel:
     """Test double: returns pre-written turns in order, then a final text answer.
 
     Each script entry is either a string (final answer, no tool calls), a list of
-    ``(tool_name, args_dict_or_raw_str)`` pairs, or a callable
-    ``(messages) -> entry`` for turns that depend on earlier tool results.
+    ``(tool_name, args_dict_or_raw_str)`` pairs, an ``AssistantTurn`` (returned as is), or a
+    callable ``(messages) -> entry`` for turns that depend on earlier tool results.
     """
 
     def __init__(self, script: list, name: str = "scripted", family: str = "qwen3"):
@@ -124,6 +124,8 @@ class ScriptedModel:
         entry = self.script.pop(0) if self.script else "done"
         if callable(entry):
             entry = entry(messages)
+        if isinstance(entry, AssistantTurn):           # a ready-made turn (e.g. finish_reason=length)
+            return entry
         if isinstance(entry, str):
             return normalise_turn(entry, [], self.family)
         calls = []

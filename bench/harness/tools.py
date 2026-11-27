@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import posixpath
 import socket
 import urllib.error
 import urllib.request
@@ -140,6 +141,9 @@ class ToolExecutor:
         self.problems: list[str] = []
         self.skill_loads: list[str] = []
         self._skill_md = {f".github/skills/{sid}/SKILL.md": sid for sid in installed}
+        # skill_used (meta.json only, not a trace event): any read, list or exec under
+        # .github/skills/<id>/, from a tool call's path, a command's text or its strace events.
+        self.skill_uses: list[str] = []
 
     # -- entry point --------------------------------------------------------
 
@@ -196,6 +200,28 @@ class ToolExecutor:
         rel = "." if real == ws else real.relative_to(ws).as_posix()
         return real, rel, None
 
+    def _skill_of(self, rel: str) -> str | None:
+        parts = rel.split("/")
+        if len(parts) >= 3 and parts[0] == ".github" and parts[1] == "skills" and parts[2] in self.installed:
+            return parts[2]
+        return None
+
+    def _skill_use(self, rel: str | None) -> None:
+        sid = self._skill_of(rel) if rel else None
+        if sid:
+            self.skill_uses.append(sid)
+
+    def _skill_use_command(self, cmd: str, events: list[dict]) -> None:
+        for sid in self.installed:                  # the command names a skill file or folder
+            if f".github/skills/{sid}/" in cmd or cmd.rstrip().endswith(f".github/skills/{sid}"):
+                self.skill_uses.append(sid)
+        for e in events:                            # ... or strace saw it touch one
+            if e["event"] in ("fs_read", "fs_write"):
+                self._skill_use(e.get("path"))
+            elif e["event"] == "proc_exec":
+                for arg in e.get("argv") or []:
+                    self._skill_use(posixpath.normpath(str(arg)) if not str(arg).startswith("/") else None)
+
     def _skill_load(self, rel: str) -> None:
         sid = self._skill_md.get(rel)
         if sid:
@@ -209,6 +235,7 @@ class ToolExecutor:
         real, rel, err = self._resolve(a["path"])
         if err:
             return ToolOutcome(f"error: {err}", "failed", {"ok": False})
+        self._skill_use(rel)
         if not real.is_file():
             return ToolOutcome(f"error: {a['path']} is not a file" if real.exists()
                                else f"error: {a['path']} does not exist", "failed", {"ok": False})
@@ -233,6 +260,7 @@ class ToolExecutor:
         real, rel, err = self._resolve(a["path"])
         if err:
             return ToolOutcome(f"error: {err}", "failed", {"ok": False})
+        self._skill_use(rel)
         if not real.is_dir():
             return ToolOutcome(f"error: {a['path']} is not a directory", "failed", {"ok": False})
         names = sorted(e.name + ("/" if e.is_dir() else "") for e in os.scandir(real))
@@ -245,6 +273,7 @@ class ToolExecutor:
         for e in mr.events:
             if e["event"] == "fs_read":
                 self._skill_load(e["path"])
+        self._skill_use_command(a["cmd"], mr.events)
         r = mr.result
         parts = [f"exit code: {r.exit}" + (" (timed out after 60 s)" if r.timed_out else "")]
         if r.stdout:
