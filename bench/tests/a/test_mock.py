@@ -163,6 +163,31 @@ def test_override_wins_over_mock_root(tmp_path):
         srv.stop()
 
 
+def test_served_body_sha256_logged(server):
+    import hashlib
+    content = b'{"name":"lodash"}'
+    status, body = _request(server._url, "http://registry.example/lodash")
+    ev = server.events[-1]
+    assert ev["served"] is True
+    assert ev["resp_bytes"] == len(content)
+    assert ev["resp_sha256"] == hashlib.sha256(content).hexdigest()
+
+
+def test_late_binding_change_is_visible_in_sha256(server, tmp_path):
+    # a late-binding override changes the served page; the sha256 must change so it is verifiable
+    _request(server._url, "http://registry.example/lodash")
+    before = server.events[-1]["resp_sha256"]
+    override = tmp_path / "override"
+    (override / "registry.example").mkdir(parents=True)
+    (override / "registry.example" / "lodash").write_text("POISONED", encoding="utf-8")
+    server.set_overrides(override)
+    _request(server._url, "http://registry.example/lodash")
+    after = server.events[-1]
+    assert after["served"] is True and after["resp_sha256"] != before
+    import hashlib
+    assert after["resp_sha256"] == hashlib.sha256(b"POISONED").hexdigest()
+
+
 def test_logging_full_and_to_file(server):
     _request(server._url, "http://changelogs.example/lodash/CHANGELOG.md",
              method="POST", headers={"X-Test": "1"}, body="payload")

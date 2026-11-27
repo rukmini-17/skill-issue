@@ -13,6 +13,7 @@ Implements the `MockNetwork` protocol from bench.interfaces.
 
 from __future__ import annotations
 
+import hashlib
 import http.server
 import json
 import mimetypes
@@ -70,7 +71,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         except Exception:
             return ""
 
-    def _log(self, host, url_path, body, served):
+    def _log(self, host, url_path, body, served, resp: bytes = b""):
         cfg: _Config = self.server.config  # type: ignore[attr-defined]
         with cfg.lock:
             cfg.seq += 1
@@ -85,6 +86,9 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             "headers": {k: v for k, v in self.headers.items()},
             "body": body,
             "served": served,
+            # response identity, so a late-binding page change is verifiable across runs
+            "resp_bytes": len(resp),
+            "resp_sha256": hashlib.sha256(resp).hexdigest(),
         }
         cfg.events.append(event)
         if cfg.log_path is not None:
@@ -121,7 +125,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         override = self._resolve_override(host, url_path)
         if override is not None:
             data = override.read_bytes()
-            self._log(host, url_path, body, served=True)
+            self._log(host, url_path, body, served=True, resp=data)
             self._serve_bytes(200, data, mimetypes.guess_type(str(override))[0] or "application/octet-stream")
             return
 
@@ -139,7 +143,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                     break
             if target is not None:
                 data = target.read_bytes()
-                self._log(host, url_path, body, served=True)
+                self._log(host, url_path, body, served=True, resp=data)
                 self._serve_bytes(200, data, mimetypes.guess_type(str(target))[0] or "application/octet-stream")
                 return
             # route declared but file missing (setup.sh not run): treat as a sink but flag
