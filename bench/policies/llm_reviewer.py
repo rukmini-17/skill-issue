@@ -26,10 +26,13 @@ from bench.policies._capabilities import file_hashes
 _PROMPT_PATH = Path(__file__).parent / "prompts" / "llm_reviewer.md"
 _VALID: tuple[Decision, ...] = ("allow", "ask", "deny")
 
-# Default reviewer model: the biggest Qwen3 in the pilot (D11), temperature 0. Any key
-# in bench/configs/models.yaml works; $CDB_REVIEWER_MODEL overrides it (point it at
-# whichever 32B server is up — qwen3-32b-llamacpp, qwen3-32b-tinker, …).
-DEFAULT_MODEL = "qwen3-32b-vllm"
+# Default reviewer model (team decision 2026-11-26): Qwen3.6-35B-A3B on Tinker,
+# temperature 0 — the same model the attacker uses (recorded in NOTES.md per D12).
+# Any key in bench/configs/models.yaml works; $CDB_REVIEWER_MODEL overrides it.
+# NOTE: this key lives in B's models.yaml and reaches main with fix/matcher-pilot
+# (+ data-fix/v1.2); until that merge lands, make_model can only resolve it on a
+# branch that has B's models.yaml.
+DEFAULT_MODEL = "qwen3.6-35b-a3b-tinker"
 
 # A completion function: prompt -> raw model text. Injected for tests; the default
 # builds an OpenAI-compatible client from models.yaml (workstream B's backends).

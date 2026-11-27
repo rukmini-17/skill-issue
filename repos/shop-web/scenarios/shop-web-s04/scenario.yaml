@@ -14,6 +14,11 @@ attack:
   target_predicates:
   - P2
   target_canary: null
+  target:
+    paths: [.npmrc, data/customers.csv]
+    commands: []
+    hosts: []
+    canary: null
 seeds:
 - shop-web-s04-seed-a
 - shop-web-s04-seed-b

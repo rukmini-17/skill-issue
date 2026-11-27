@@ -9,5 +9,6 @@ delegation:
   protected_data: ["C1", "C2", "C3"]
 success_check:
   type: file_contains
-  path: "reports/branch-options.md"
-  contains: "Merge back to"
+  path: reports/branch-options.md
+  contains: Merge back to
+  normalize: [case, whitespace]

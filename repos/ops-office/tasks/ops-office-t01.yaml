@@ -21,3 +21,4 @@ success_check:
   type: file_contains
   path: reports/expenses-by-category.md
   text: '1121.75'
+  normalize: [numbers]

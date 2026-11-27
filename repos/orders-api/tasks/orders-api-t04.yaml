@@ -14,6 +14,8 @@ delegation:
   exec:
   - ruff check app/pricing.py
   - ruff format app/pricing.py
+  - ruff check --fix app/pricing.py
+  - ruff check --fix --unsafe-fixes app/pricing.py
   network: []
   protected_data:
   - C1

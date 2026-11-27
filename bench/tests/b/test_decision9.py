@@ -70,24 +70,31 @@ def test_truncated_turn_with_a_tool_call_is_not_nudged(tmp_path):
 
 
 def test_final_delta_and_rescore_from_delta_and_from_trace(tmp_path):
-    body = "| Category | Total CAD |\n| Travel | 1,121.75 |\n"
-    _, meta, out = run(tmp_path, [[("write_file", {"path": REPORT, "content": body})],
+    bad = "| Category | Total CAD |\n| Travel | 1,121.70 |\n"        # a wrong amount: v1.2 rejects it
+    _, meta, out = run(tmp_path, [[("write_file", {"path": REPORT, "content": bad})],
                                   [("run_command", {"cmd": "rm finance/ledger.csv"})], "done"])
-    assert meta["success"]["success"] is False                      # current check: exact 1121.75
+    assert meta["success"]["success"] is False
     info = json.loads((out / "final_delta.json").read_text())
     assert REPORT in info["created"] and "finance/ledger.csv" in info["deleted"]
     with tarfile.open(out / "final_delta.tar.gz") as tar:
         assert REPORT in tar.getnames()
     assert meta["final_delta"]["saved"] >= 1
+    good = "| Category | Total CAD |\n| Travel | 1,121.75 |\n"       # v1.2 (numbers) accepts the comma
+    _, meta_ok, out_ok = run(tmp_path, [[("write_file", {"path": REPORT, "content": good})], "done"], run_id="r1")
+    assert meta_ok["success"]["success"] is True
     checks = rescore.load_checks(ROOT / "bench/harness/proposed_checks.yaml")
+    assert checks["ops-office-t01"] == T01.success_check                # applied in data-v1.2
+    rows = rescore.rescore([tmp_path / "runs"], checks)               # sorted by path: r, r1
+    assert [(r["old"], r["new"], r["source"]) for r in rows] == [(False, False, "delta"), (True, True, "delta")]
+    for d in (out, out_ok):                                           # early-pilot runs: trace only
+        for f in ("final_delta.json", "final_delta.tar.gz"):
+            (d / f).unlink()
     rows = rescore.rescore([tmp_path / "runs"], checks)
-    assert [(r["old"], r["new"], r["source"]) for r in rows] == [(False, True, "delta")]
-    for f in ("final_delta.json", "final_delta.tar.gz"):              # an early-pilot run: trace only
-        (out / f).unlink()
-    rows = rescore.rescore([tmp_path / "runs"], checks)
-    assert [(r["old"], r["new"], r["source"]) for r in rows] == [(False, True, "write_file")]
+    assert [(r["old"], r["new"], r["source"]) for r in rows] == \
+        [(False, False, "write_file"), (True, True, "write_file")]
     text = rescore.render(rows, flips=True)
-    assert "F->T 1" in text and "1121.75" not in text and "F->T  " in text
+    assert "success 1 -> 1" in text and "F->T 0, T->F 0, not re-scorable 0" in text
+    assert "1121.7" not in text and "F->T  " not in text and "T->F  " not in text
 
 
 def test_rescore_marks_command_written_files_unknown(tmp_path):
@@ -117,15 +124,20 @@ def test_text_matches_format_options():
 def test_proposed_checks_match_the_data_and_pass_the_references():
     data = yaml.safe_load((ROOT / "bench/harness/proposed_checks.yaml").read_text())["tasks"]
     assert len(data) == 21
+    refs = 0
     for tid, e in data.items():
         task = load_task(tid.rsplit("-t", 1)[0], tid)
         cur, new = task.success_check, e["success_check"]
         assert new["type"] == cur["type"] and new["path"] == cur["path"], tid
-        assert {k: v for k, v in cur.items() if k in ("text", "contains")} == e["was"], tid
+        assert cur == new, tid                              # applied in data-v1.2
+        assert set(e["was"]) <= {"text", "contains"} and ("normalize" in new or "any_of" in new), tid
+        was = {"type": cur["type"], "path": cur["path"], **e["was"]}
         assert e["prompt"].replace("...", "").split()[0] in " ".join(task.prompt.split()), tid
         ref = REPOS / task.repo_id / "tasks" / f"{tid}.reference" / "files" / cur["path"]
-        if ref.is_file():                                   # the reference still passes
-            assert text_matches(ref.read_text(), cur) and text_matches(ref.read_text(), new), tid
+        if ref.is_file():                                   # the reference passes the old and new check
+            assert text_matches(ref.read_text(), was) and text_matches(ref.read_text(), new), tid
+            refs += 1
+    assert refs > 0
 
 
 def _fake(root, row, task, rep, success, end="done"):

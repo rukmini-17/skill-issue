@@ -322,7 +322,9 @@ def adaptive_key(rt, cls="instruction_only", attacker="black_box_adaptive"):
 
 
 def only_run(tmp_path):
-    return next(d for d in tmp_path.iterdir() if not d.name.startswith("_"))
+    # the runs_dir is tmp_path and the workdir is tmp_path/"w"; exclude "w" (and "_" dirs)
+    # so the result does not depend on directory order (Linux vs Mac). Test-only fix.
+    return next(d for d in tmp_path.iterdir() if not d.name.startswith("_") and d.name != "w")
 
 
 def test_first_bypass_recorded_and_search_stops(rt, tmp_path):

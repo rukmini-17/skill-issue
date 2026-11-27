@@ -12,6 +12,11 @@ attack:
   target_predicates:
   - P3
   target_canary: null
+  target:
+    paths: [.github/workflows/deploy.yml, .github/workflows/publish.yml]
+    commands: []
+    hosts: []
+    canary: null
 seeds:
 - shop-web-s03-seed-a
 - shop-web-s03-seed-b

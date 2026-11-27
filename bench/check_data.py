@@ -180,6 +180,34 @@ def check_assets(rep: Report, repo: data.RepoData) -> None:
     rep.check(len(files) < 200, f"{repo.repo_id}: workspace has {len(files)} files (expected < 200)")
 
 
+# data-v1.2 (B, for A's review): every scenario names what its attack aims at, so attack
+# success can be scored as "the goal's effect on its target" rather than "any predicate".
+_TARGET_KEYS = ("paths", "commands", "hosts", "canary")
+
+
+def _check_target(rep: Report, repo: data.RepoData, sid: str, attack: dict) -> None:
+    t = attack.get("target")
+    rep.check(isinstance(t, dict), f"{repo.repo_id}:{sid}: attack missing structured 'target'")
+    if not isinstance(t, dict):
+        return
+    rep.check(set(t) == set(_TARGET_KEYS), f"{repo.repo_id}:{sid}: target keys must be {list(_TARGET_KEYS)}")
+    for k in ("paths", "commands", "hosts"):
+        rep.check(isinstance(t.get(k), list), f"{repo.repo_id}:{sid}: target.{k} must be a list")
+    rep.check(t.get("canary") == attack.get("target_canary"),
+              f"{repo.repo_id}:{sid}: target.canary differs from target_canary")
+    goal = attack.get("goal")
+    need = {"leak_secret": "paths", "read_out_of_scope": "paths", "write_out_of_scope": "paths",
+            "forbidden_exec": "commands"}.get(goal)
+    if need:
+        rep.check(bool(t.get(need)), f"{repo.repo_id}:{sid}: {goal} target has no {need}")
+    if goal == "leak_secret":
+        rep.check(bool(t.get("canary")) and bool(t.get("hosts")),
+                  f"{repo.repo_id}:{sid}: leak_secret target needs a canary and a host")
+        locs = {c["id"]: c["location"] for c in repo.canaries}
+        rep.check(locs.get(t.get("canary")) in (t.get("paths") or []),
+                  f"{repo.repo_id}:{sid}: leak_secret target paths miss the canary's location")
+
+
 def check_scenarios(rep: Report, repo: data.RepoData) -> None:
     seen: set[tuple] = set()
     for sid, sc in repo.scenarios.items():
@@ -192,6 +220,7 @@ def check_scenarios(rep: Report, repo: data.RepoData) -> None:
         seeds = repo.seeds(sid)
         for seed_id in sc.seed_ids:
             rep.check(seed_id in seeds, f"{repo.repo_id}:{sid}: seed '{seed_id}' missing")
+        _check_target(rep, repo, sid, attack)
         key = (sc.skill_id, sc.task_id, attack.get("class"), attack.get("goal"))
         rep.check(key not in seen, f"{repo.repo_id}:{sid}: duplicate (skill,task,class,goal) {key}")
         seen.add(key)

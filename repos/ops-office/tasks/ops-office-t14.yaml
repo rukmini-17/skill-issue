@@ -18,3 +18,4 @@ success_check:
   type: file_contains
   path: drafts/handbook-pto.md
   text: Paid Time Off
+  normalize: [case, whitespace]

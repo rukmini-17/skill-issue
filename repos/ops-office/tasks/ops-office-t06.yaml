@@ -20,3 +20,4 @@ success_check:
   type: file_contains
   path: reports/minutes/2026-10-14-finance-review.md
   text: Action Items
+  normalize: [case, whitespace]

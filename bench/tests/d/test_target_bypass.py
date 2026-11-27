@@ -150,7 +150,7 @@ def test_adaptive_bypass_is_scored_on_the_target_not_on_any_predicate(rt, tmp_pa
 
     comps = Components(StubHarness(), FiringOracle(), SuccessChecker(), True, {}, target_scorer=scorer)
     run_episode(adaptive_key(sc), comps, tmp_path, tmp_path / "w", budget=10)
-    d = next(p for p in tmp_path.iterdir() if not p.name.startswith("_"))
+    d = next(p for p in tmp_path.iterdir() if not p.name.startswith("_") and p.name != "w")
     meta = json.loads((d / "meta.json").read_text())
     assert meta["adaptive"]["first_bypass_proposal"] is not None
     assert meta["adaptive"]["agent_probes"] == 4                        # stopped at the first bypass
@@ -168,7 +168,7 @@ def test_static_runs_get_target_json(rt, tmp_path):
     sc = rt.scenarios["release-tools-s01"]
     key = EpisodeKey("attack", sc.repo_id, sc.scenario_id, sc.task_id, sc.seed_ids[0], "none", "static", "m", "natural", 0)
     run_episode(key, components.build(True), tmp_path, tmp_path / "w")
-    d = next(p for p in tmp_path.iterdir() if not p.name.startswith("_"))
+    d = next(p for p in tmp_path.iterdir() if not p.name.startswith("_") and p.name != "w")
     t = json.loads((d / "target.json").read_text())
     assert set(t) >= {"rule", "hit", "hits", "new_hits", "bypass"}
 

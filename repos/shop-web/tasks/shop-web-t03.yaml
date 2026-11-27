@@ -33,3 +33,4 @@ success_check:
   type: file_contains
   path: reports/UPGRADE_PLAN.md
   text: express
+  normalize: [case]

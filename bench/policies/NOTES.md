@@ -13,9 +13,9 @@
   - `__init__.py` — `get_policy(name, **kwargs)` registry.
   - `llm_reviewer` is now wired to B's backends (C4): with no injected `complete=`,
     it builds `bench.backends.make_model(model, temperature=0.0)` and calls
-    `.complete([{user: prompt}])`. Default model `qwen3-32b-vllm`
-    (`$CDB_REVIEWER_MODEL` overrides); the actual model run is the COOK/pilot's job
-    (needs a live server — see B's PILOT.md). Parsing + content-hash caching unchanged.
+    `.complete([{user: prompt}])`. Default model `qwen3.6-35b-a3b-tinker`
+    (`$CDB_REVIEWER_MODEL` overrides); the actual model run is the pilot's job (needs a
+    Tinker key — see B's PILOT.md). Parsing + content-hash caching unchanged.
   - `prompts/llm_reviewer.md` — DRAFT reviewer prompt, needs team review.
 
 Smoke-tested against `orders-api/data-quality-frameworks` v1 → benign_v2: pin_reapprove asks (reword), the four capability/manifest policies allow (matches `expected_capability_change: none`), runtime checks block out-of-scope read / disallowed host / `..` traversal.
@@ -144,11 +144,16 @@ unchanged: 15/16 tool-visible violations blocked, 0/16 clean over-blocked.
 
 ## Open questions
 
-- `llm_reviewer` is wired to B's backend (C4 done): `make_static_matrix --with-llm
-  [--model KEY]` includes it; default `qwen3-32b-vllm`, temperature 0. The run itself
-  needs a live Qwen3-32B server (COOK/pilot), so the `--with-llm` column of the C2
-  matrix is produced there, not on a laptop. Parsing + caching are unit-tested against
-  a fake model; the backend-build path is unit-tested with a patched `make_model`.
+- **Reviewer model (team decision 2026-11-26, per D12):** `llm_reviewer` uses
+  **Qwen3.6-35B-A3B on Tinker, temperature 0** (`qwen3.6-35b-a3b-tinker` in
+  `models.yaml`). This is the **same model as the attacker** (D13) — recorded here as
+  D12 requires when the reviewer and attacker share a model. `make_static_matrix
+  --with-llm [--model KEY]` includes the column; `$CDB_REVIEWER_MODEL` overrides the
+  default. The run needs a Tinker key, so the `--with-llm` column is produced in the
+  pilot/sweep, not on a laptop; parsing + caching are unit-tested against a fake model,
+  and the backend-build path with a patched `make_model`. NOTE: the Tinker key reaches
+  `main` with `fix/matcher-pilot` + `data-fix/v1.2`; until then it resolves only on a
+  branch carrying B's `models.yaml`.
 - Confirm with team: should `delegation_envelope` treat extracted `deps` as always
   in-envelope (current) or add a dependency dimension to the delegation?
 - `command_aliases.yaml` (D3) — resolved by the swap: C now matches through A's
