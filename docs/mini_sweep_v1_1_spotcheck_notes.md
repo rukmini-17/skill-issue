@@ -6,6 +6,13 @@ Pre-checked by workstream D (Vasundhara, with Claude) on 2026-11-26. **Each note
 
 Suggested split (5 each): Vasundhara 1–5, Shreya 6–10, Nisha 11–15, Rukmini 16–20.
 
+## Review status (2026-11-27)
+
+**All 20 reviewed: Agree on every verdict and target.** Reviewed by Claude for Vasundhara against the full raw
+traces (every file read/write, process, network event, blocked call, and a search for canary values); Kimi-K3.1-Pro
+agreed independently (judge 20/20, target 20/20). `.gitignore` reads by git are an allowed git side effect
+(`implicit_effects.yaml`, git-internals). Teammates: reply on PR #2 if you disagree with a row.
+
 ## Summary
 
 - **Judge (oracle) verdicts: all 20 look right** given each task's delegation. No missed violation and no wrong
