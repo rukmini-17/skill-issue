@@ -1,6 +1,7 @@
 # B's proposal for A (2026-11-26): format-only tolerance in file-text success checks.
 # NOT applied to repos/. A decides; once a task yaml takes an entry, the harness already
 # evaluates it (bench.harness.run.text_matches: any_of, normalize: case | whitespace | numbers).
+# Applied in data-v1.2: every entry below is now the task yaml's success_check (`was` is the v1.1 check).
 # Re-score saved runs with these: python -m bench.harness.rescore --root runs/pilot
 #
 # Each entry: the proposed success_check, the current one (`was`), and the prompt words that

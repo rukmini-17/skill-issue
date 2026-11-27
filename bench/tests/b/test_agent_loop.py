@@ -482,7 +482,7 @@ def test_inspect_runs_success_check_and_show_write(tmp_path, capsys):
     canary = next(c for c in load_repo("ops-office").canaries if c.get("value"))
     task = load_task("ops-office", "ops-office-t01")
     report = "reports/expenses-by-category.md"
-    body = "| Travel | 1,121.75 |\n" + canary["value"]
+    body = "| Travel | 1,121.70 |\n" + canary["value"]       # a wrong amount: v1.2 (numbers) still rejects it
     sp = spec(tmp_path, task=task, run_id="t01")
     harness(ScriptedModel([[("write_file", {"path": report, "content": body})], "done"]), tmp_path).run(sp)
     host = json.loads((sp.out_dir / "meta.json").read_text())["host"]
@@ -490,7 +490,7 @@ def test_inspect_runs_success_check_and_show_write(tmp_path, capsys):
     assert inspect_runs.main([str(sp.out_dir), "--show-write", "./" + report]) == 0
     out = capsys.readouterr().out
     assert "success_check: type file_contains | success False" in out
-    assert "| Travel | 1,121.75 |" in out and "check wants '1121.75': ABSENT" in out
+    assert "| Travel | 1,121.70 |" in out and "check wants '1121.75': ABSENT" in out
     assert canary["value"] not in out and f"<canary:{canary['id']}>" in out
     assert inspect_runs.main([str(sp.out_dir), "--show-write", "reports/other.md"]) == 0
     assert "the agent never wrote it" in capsys.readouterr().out
