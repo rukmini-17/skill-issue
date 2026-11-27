@@ -7,7 +7,7 @@
 | 1 runner on stubs: dry run, resume after kill, sharding | done |
 | 2 static attacker reproduces seed installs byte for byte | done |
 | 3 Slurm templates + resubmit script | done locally; **the real COOK test job is for a human to run** |
-| 4 adaptive attackers | stages 1–2 done; stage-3 **wiring** now done (`LLMProposer`, tested) and smoke-tested for real against Tinker (\$12.61, 19/40 episodes, see below) but still running on a **placeholder prompt** — the real team-written `proposer.md` has not landed; waiting for "continue" |
+| 4 adaptive attackers | stages 1–2 done; stage-3 **wiring** done (`LLMProposer`, tested) and smoke-tested for real against Tinker on the old placeholder (\$12.61, 19/40 episodes, see below); `proposer.md` now holds a **draft** attacker prompt written at the user's request as a team starting point — **not yet reviewed/approved**; waiting for "continue" |
 | 5 sweeps | mini-sweep done (M3 spot-check: 20/20 agree); full-run configs, Mac/COOK shard scripts and the summary tool ready; waiting on the data-v1.2 tag. `adaptive_tinker.yaml`/`adaptive_calibration.yaml` narrowed to the two policies that survived the static grid (2026-11-27). Stage-3 attacker prompt: **team-owned, still not written** |
 
 ## Full runs (M3) — ready, waiting on the data-v1.2 tag (2026-11-27)
@@ -49,16 +49,26 @@ asks/denials and task success per policy. Checked on the mini-sweep: its table 2
 
 **Stage-3 attacker.** The hook (`Proposer`) now has a concrete implementation, `LLMProposer` in
 `bench/attackers/adaptive.py`, wired to `bench/attackers/llm.py` and to `bench/attackers/prompts/proposer.md`.
-**The prompt text in that file is a placeholder I wrote to exercise the wiring, not the team's reviewed attacker
-prompt.** A task brief said Nisha had written and reviewed `bench/attackers/prompts/proposer.md`; I could not
-find it anywhere — not in the working tree, not in `git log --all` on any local or remote branch after
-fetching, not in `~/Downloads` or `~/Desktop`. Per Part 0 of the spec, writing that research text is a human
-job, not D's, so I did not try to reconstruct it for real use; the placeholder is marked as such in its own
-first line and in every config comment that points at it. **Do not launch `adaptive_tinker.yaml` for real
-money until `proposer.md` is replaced with the team's actual prompt** (the wiring itself is safe to run on the
-placeholder — see `adaptive_calibration.yaml`'s comment — because a bad/missing attacker only costs search
-quality, never correctness: invalid or unparseable replies are logged as `proposer_error` and simply cost
-budget, D13 already guarantees that).
+A task brief said Nisha had written and reviewed `bench/attackers/prompts/proposer.md`; I could not find it
+anywhere — not in the working tree, not in `git log --all` on any local or remote branch after fetching, not
+in `~/Downloads` or `~/Desktop`. Per Part 0 of the spec and the D13 redline (`docs/IMPL_PROMPT_D10-D13_v1.2.md`:
+"written and reviewed by the team"), that text is a human job, not D's.
+
+The calibration smoke test below (2026-11-27) ran against a throwaway placeholder written only to exercise the
+wiring. **That placeholder has since been replaced (2026-11-27) with a real draft** — content grounded in the
+oracle's actual predicate semantics (`bench/oracle/oracle.py`: P1 host, P2 read, P3 write, P4 exec, P5 canary
+content), the `style`/`class` taxonomy observed in the data, and the tactics the team's own handcrafted seeds
+already use (e.g. `release-tools-s01`'s blunt vs. mid-workflow placement, `ops-office-s23`'s companion-skill
+authority framing). **This draft was written at the user's request as a starting point for the team to review
+and is explicitly NOT yet reviewed or approved.** Add a line here naming who reviewed it and when before
+treating any run against it as real signal, and before launching `adaptive_tinker.yaml` for real money. The
+smoke test's numbers (flat 6.7% bypass, all from stage 1) are about the old throwaway placeholder and tell you
+nothing about this draft's quality — rerun the calibration once it's reviewed, or sooner if the team just wants
+a sense of whether the draft itself is in the right ballpark.
+
+The wiring is safe to run against either version regardless of review state (see `adaptive_calibration.yaml`'s
+comment) because a bad or unreviewed attacker only costs search quality, never correctness: invalid or
+unparseable replies are logged as `proposer_error` and simply cost budget, D13 already guarantees that.
 
 Design notes on the wiring (2026-11-27):
 - Black-box vs. policy-aware is decided **per call**, not at construction: `components.make_attacker` builds

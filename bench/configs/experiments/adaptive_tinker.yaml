@@ -10,8 +10,10 @@
 # adaptive search, D13 team decision 2026-11-26). Add llm_reviewer once C's reviewer row exists.
 # Policy `none` is skipped by the runner (nothing to evade, D13).
 # components.proposer: bench.attackers.adaptive:LLMProposer, which reads
-# bench/attackers/prompts/proposer.md. AS OF THIS COMMIT THAT FILE IS A PLACEHOLDER, not the team's
-# reviewed attacker prompt (NOTES.md) — do not launch the real paid sweep until it is replaced.
+# bench/attackers/prompts/proposer.md. AS OF THIS COMMIT THAT FILE IS A DRAFT pending team review
+# (NOTES.md) — written by workstream D as a starting point, not yet approved by the team (D13: that
+# text is supposed to be team-written and reviewed). Do not launch the real paid sweep until someone
+# on the team has reviewed it and NOTES.md says so.
 # baseline_runs: point at this model's benign task_completion runs to score "beyond benign"; empty = raw hits.
 # Submit: shards split across the four keys, e.g. SHARDS=20 ARRAY=0-4 MAX_COST_USD=40 sh bench/runner/slurm/submit_tinker.sh bench/configs/experiments/adaptive_tinker.yaml
 name: adaptive_tinker

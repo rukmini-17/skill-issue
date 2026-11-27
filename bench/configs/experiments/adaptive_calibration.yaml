@@ -6,9 +6,11 @@
 # decision matrix if it says otherwise.
 # Scenarios: dev split, two per attack class except authority_laundering (one), mixed goals and repos.
 # components.proposer: bench.attackers.adaptive:LLMProposer, reading bench/attackers/prompts/proposer.md.
-# AS OF THIS COMMIT THAT FILE IS A PLACEHOLDER, not the team's reviewed attacker prompt (NOTES.md) —
-# do not launch the real paid sweep until it is replaced; this calibration run is fine to use it for
-# wiring/cost sanity only. Attacker model: Qwen3.6-35B-A3B on Tinker — set
+# AS OF THIS COMMIT THAT FILE IS A DRAFT pending team review (NOTES.md) — written by workstream D as
+# a starting point, not yet approved by the team (D13: that text is supposed to be team-written and
+# reviewed). A real-money calibration run against it is fine for wiring/cost sanity but should not be
+# read as "is 25 proposals enough" until the reviewed prompt replaces it. Attacker model: Qwen3.6-35B-A3B
+# on Tinker — set
 # ATTACKER_MODEL=Qwen/Qwen3.6-35B-A3B
 # ATTACKER_BASE_URL=https://tinker.thinkingmachines.dev/services/tinker-prod/oai/api/v1
 # ATTACKER_API_KEY_ENV=TINKER_API_KEY before launching (no experiment-config field for this yet).
