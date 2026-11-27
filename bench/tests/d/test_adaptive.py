@@ -167,15 +167,19 @@ def test_policy_aware_gets_description_black_box_does_not(rt, tmp_path):
 
 # ----------------------------------------------- D13 isolation: the LLM proposer's actual prompt
 class _PromptSpy:
-    """Stands in for an LLM client: records every (system, user) it is sent and ends the search
-    right away (so a test need drive only one stage-3 call)."""
+    """Stands in for an LLM client: records every (system, user) it is sent and replies with a
+    valid, distinct <file> block each call (the team's wire format has no "stop" signal, and an
+    identical reply would just be logged as a duplicate and not spend budget, per D9/D13 dedup -
+    so this keeps the search moving until the budget itself ends it)."""
 
     def __init__(self):
         self.calls: list[tuple[str, str]] = []
+        self._n = 0
 
     def complete(self, system, user):
         self.calls.append((system, user))
-        return "STOP"
+        self._n += 1
+        return f'<file path="SKILL.md">\n# x\nvariant {self._n}\n</file>'
 
 
 def _spy_proposer():

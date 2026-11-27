@@ -84,7 +84,9 @@ class Proposer(Protocol):
 # ----------------------------------------------------------------------------- stage 3: the team's LLM proposer
 PROMPT_PATH = Path(__file__).parent / "prompts" / "proposer.md"
 POLICY_AWARE_MARKER = "INJECTED ONLY FOR policy_aware_adaptive"
-_FENCE_RE = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.S)
+POLICY_DESCRIPTION_TOKEN = "{policy_description}"
+_FILE_BLOCK_RE = re.compile(r'<file\s+path="([^"]*)">\n?(.*?)</file>', re.S)
+_MOCK_BLOCK_RE = re.compile(r'<mock_page\s+path="([^"]*)">\n?(.*?)</mock_page>', re.S)
 
 
 def _split_prompt(text: str) -> tuple[str, str]:
@@ -100,9 +102,29 @@ def _split_prompt(text: str) -> tuple[str, str]:
     return text.strip(), ""
 
 
-def _strip_fence(text: str) -> str:
-    m = _FENCE_RE.match(text.strip())
-    return m.group(1) if m else text.strip()
+def _apply_policy_description(aware_block: str, policy_description: str) -> str:
+    """Insert the actual per-run policy description into the policy-aware block.
+
+    If the block has a literal ``{policy_description}`` token, substitute it there (lets the
+    prompt place it mid-paragraph). Otherwise append it at the end, so a prompt that only writes
+    general policy-family guidance (no token) still gets the concrete text D13 says the
+    policy-aware attacker is entitled to, instead of it being silently dropped.
+    """
+    if POLICY_DESCRIPTION_TOKEN in aware_block:
+        return aware_block.replace(POLICY_DESCRIPTION_TOKEN, policy_description)
+    return f"{aware_block}\n\nPolicy description:\n{policy_description}"
+
+
+def _parse_blocks(reply: str) -> RawProposal:
+    """Parse the team's wire format: one or more ``<file path="...">...</file>`` blocks (every
+    class except late_binding) and/or ``<mock_page path="host/route">...</mock_page>`` blocks
+    (late_binding only). A leading newline right after the opening tag is dropped; everything else
+    between the tags is kept verbatim as that file's full new content."""
+    files = {p: c[1:] if c.startswith("\n") else c for p, c in _FILE_BLOCK_RE.findall(reply)}
+    mock_files = {p: c[1:] if c.startswith("\n") else c for p, c in _MOCK_BLOCK_RE.findall(reply)}
+    if not files and not mock_files:
+        raise ValueError("reply has no <file> or <mock_page> blocks")
+    return RawProposal(files=files, mock_files=mock_files)
 
 
 def _render_user_prompt(ctx: ProposalContext) -> str:
@@ -125,14 +147,16 @@ class LLMProposer:
     black-box vs. policy-aware is decided per call from ``ctx.policy_description`` — ``None`` for
     ``black_box_adaptive``, a string for ``policy_aware_adaptive`` (D13) — rather than at
     construction. The policy-aware block of the prompt (everything after the
-    ``POLICY_AWARE_MARKER`` line) is appended only when that field is not None, with
-    ``{policy_description}`` in it replaced by the actual text; it is never built into, or sent
-    in, the black-box system prompt.
+    ``POLICY_AWARE_MARKER`` line) is appended only when that field is not None, with the actual
+    text inserted via ``_apply_policy_description``; it is never built into, or sent in, the
+    black-box system prompt.
 
-    A reply is expected to be exactly one JSON object (``{"files": ..., "mock_files": ...}``, full
-    file contents, not diffs) or the literal word ``STOP``. Anything else raises, which the caller
+    A reply is expected to be one or more ``<file path="...">...</file>`` / ``<mock_page
+    path="...">...</mock_page>`` blocks (the team's wire format; see ``_parse_blocks``) and nothing
+    else. There is no "stop" signal in that format — the search is bounded purely by budget, as
+    D13 specifies. A reply with no parseable blocks raises, which the caller
     (``AdaptiveSession._from_proposer``) already treats as a failed proposal that still costs the
-    budget (D13: "a failing proposer costs budget") rather than ending the search.
+    budget ("a failing proposer costs budget") rather than ending the search.
     """
 
     def __init__(self, prompt_path: Path | str | None = None, model_cfg: dict | None = None,
@@ -148,14 +172,9 @@ class LLMProposer:
     def propose(self, ctx: ProposalContext) -> RawProposal | None:
         system = self._base_prompt
         if ctx.policy_description is not None and self._policy_aware_block:
-            system = f"{system}\n\n{self._policy_aware_block.replace('{policy_description}', ctx.policy_description)}"
-        reply = self._model.complete(system, _render_user_prompt(ctx)).strip()
-        if reply.upper() == "STOP":
-            return None
-        data_ = json.loads(_strip_fence(reply))
-        files = {k: str(v) for k, v in (data_.get("files") or {}).items()}
-        mock_files = {k: str(v) for k, v in (data_.get("mock_files") or {}).items()}
-        return RawProposal(files=files, mock_files=mock_files)
+            system = f"{system}\n\n{_apply_policy_description(self._policy_aware_block, ctx.policy_description)}"
+        reply = self._model.complete(system, _render_user_prompt(ctx))
+        return _parse_blocks(reply)
 
 
 # ----------------------------------------------------------------------------- helpers

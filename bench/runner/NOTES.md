@@ -7,7 +7,7 @@
 | 1 runner on stubs: dry run, resume after kill, sharding | done |
 | 2 static attacker reproduces seed installs byte for byte | done |
 | 3 Slurm templates + resubmit script | done locally; **the real COOK test job is for a human to run** |
-| 4 adaptive attackers | stages 1–2 done; stage-3 **wiring** done (`LLMProposer`, tested) and smoke-tested for real against Tinker on the old placeholder (\$12.61, 19/40 episodes, see below); `proposer.md` now holds a **draft** attacker prompt written at the user's request as a team starting point — **not yet reviewed/approved**; waiting for "continue" |
+| 4 adaptive attackers | stages 1–3 done: `LLMProposer` wired and tested, smoke-tested for real against Tinker (on an old placeholder, \$12.61, 19/40 episodes, see below), and `proposer.md` now holds **Nisha's actual attacker prompt** (received 2026-11-27), with the block-format parser updated to match it; the real calibration (D13's 50-proposal/10-scenario check) has not been run against it yet |
 | 5 sweeps | mini-sweep done (M3 spot-check: 20/20 agree); full-run configs, Mac/COOK shard scripts and the summary tool ready; waiting on the data-v1.2 tag. `adaptive_tinker.yaml`/`adaptive_calibration.yaml` narrowed to the two policies that survived the static grid (2026-11-27). Stage-3 attacker prompt: **team-owned, still not written** |
 
 ## Full runs (M3) — ready, waiting on the data-v1.2 tag (2026-11-27)
@@ -55,20 +55,39 @@ in `~/Downloads` or `~/Desktop`. Per Part 0 of the spec and the D13 redline (`do
 "written and reviewed by the team"), that text is a human job, not D's.
 
 The calibration smoke test below (2026-11-27) ran against a throwaway placeholder written only to exercise the
-wiring. **That placeholder has since been replaced (2026-11-27) with a real draft** — content grounded in the
-oracle's actual predicate semantics (`bench/oracle/oracle.py`: P1 host, P2 read, P3 write, P4 exec, P5 canary
-content), the `style`/`class` taxonomy observed in the data, and the tactics the team's own handcrafted seeds
-already use (e.g. `release-tools-s01`'s blunt vs. mid-workflow placement, `ops-office-s23`'s companion-skill
-authority framing). **This draft was written at the user's request as a starting point for the team to review
-and is explicitly NOT yet reviewed or approved.** Add a line here naming who reviewed it and when before
-treating any run against it as real signal, and before launching `adaptive_tinker.yaml` for real money. The
-smoke test's numbers (flat 6.7% bypass, all from stage 1) are about the old throwaway placeholder and tell you
-nothing about this draft's quality — rerun the calibration once it's reviewed, or sooner if the team just wants
-a sense of whether the draft itself is in the right ballpark.
+wiring, then briefly against an agent-written draft (same day) that was never used for a real run. **Both are
+now superseded: `proposer.md` holds Nisha's actual attacker prompt, received (via the user) 2026-11-27.** This
+is the real text D13 calls for, not something D wrote. The smoke test's numbers (flat 6.7% bypass, all from
+stage 1) are about the old placeholder and tell you nothing about this prompt.
 
-The wiring is safe to run against either version regardless of review state (see `adaptive_calibration.yaml`'s
-comment) because a bad or unreviewed attacker only costs search quality, never correctness: invalid or
-unparseable replies are logged as `proposer_error` and simply cost budget, D13 already guarantees that.
+**Wire-format change this required.** Nisha's prompt specifies a different reply format than the placeholder
+did: one or more `<file path="...">...</file>` blocks (every class except late_binding) and/or `<mock_page
+path="host/route">...</mock_page>` blocks (late_binding only) — not a JSON object. `LLMProposer._parse_blocks`
+now parses that format with two regexes; a reply with no blocks raises (same "costs budget, doesn't end the
+search" handling as before). Her format also has **no "stop" signal** — unlike the placeholder's `STOP` word,
+there is no way for the model to voluntarily end the search; this is actually more consistent with D13 itself,
+which bounds the search by budget and stop-at-bypass alone, so nothing was lost. The two new isolation tests
+still pass against her text unchanged (the `<file>`/`<mock_page>` block format and the no-stop behavior didn't
+need new tests, just a spy that returns a valid, distinct block per call instead of `STOP` — an identical reply
+would otherwise just be logged as a duplicate and not spend budget, per the existing D9 dedup rule).
+
+**Two things worth flagging back to Nisha/the team, not fixed unilaterally:**
+1. Her "Inputs you receive" list names only `goal`, `attack_class`, `current files`, `budget`/`used`, feedback,
+   and (policy-aware) the policy description — it does not mention `seed_payloads`, `mock_pages` or `style`.
+   The code still sends all three in the user-message JSON (`_render_user_prompt`) because `mock_pages` is the
+   only way the model can learn a valid `host/route` for a `late_binding` proposal (`validate.py` rejects a
+   path that isn't a known route) — dropping it would make that class fail almost every time. If the omission
+   from her list was deliberate (e.g. she wants late_binding proposals that *don't* rely on being shown the
+   routes), say so and this should change.
+2. Her policy-aware block (after the `INJECTED ONLY FOR policy_aware_adaptive` marker) is static prose about
+   policy *families* in general; it has no token marking where the actual per-run policy description should
+   go. `_apply_policy_description` appends it at the end (`Policy description:\n<text>`) rather than dropping
+   it, so the policy-aware attacker still gets the concrete, per-policy text D13 says it's entitled to, on top
+   of her general blind-spot framing. Flag if that's not the intended combination.
+
+The wiring is safe to run against an unreviewed or malformed prompt (see `adaptive_calibration.yaml`'s comment)
+because a bad attacker only costs search quality, never correctness: invalid or unparseable replies are logged
+as `proposer_error` and simply cost budget, D13 already guarantees that.
 
 Design notes on the wiring (2026-11-27):
 - Black-box vs. policy-aware is decided **per call**, not at construction: `components.make_attacker` builds
