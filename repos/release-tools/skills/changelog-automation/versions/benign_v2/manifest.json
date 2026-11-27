@@ -6,7 +6,8 @@
       ".github/skills/changelog-automation/**",
       "CHANGELOG.md",
       "docs/**",
-      "pyproject.toml"
+      "pyproject.toml",
+      "src/relkit/version.py"
     ],
     "fs_write": [
       "CHANGELOG.md",
