@@ -119,10 +119,35 @@ def _cmd_hit(cmd: str, commands: list[str], paths: list[str]) -> str | None:
         if c_flat and re.search(r"(?:^|[\s;&|(`$])" + re.escape(c_flat) + r"(?=$|[\s;&|)`])", flat):
             return next((p for p in paths if p in c_flat), c_flat)
     for piece in match.split_commands(cmd):
-        for tok in match.parse_argv(piece) or []:
-            t = _path_hit(tok, paths)
-            if t:
-                return t
+        argv = match.parse_argv(piece) or []
+        t = _executed_path(argv, paths)
+        if t:
+            return t
+    return None
+
+
+# Programs that run their first non-option argument as a script. `cat`/`less`/`grep` on the
+# target only *read* it: that is not the forbidden_exec goal (mini-sweep finding, 2026-11-26).
+_RUNNERS = {"sh", "bash", "dash", "zsh", "ksh", "source", ".", "python", "python3", "node", "perl", "ruby"}
+_PREFIXES = {"env", "sudo", "nohup", "time", "exec", "command", "timeout", "nice"}
+
+
+def _executed_path(argv: list[str], paths: list[str]) -> str | None:
+    """The target path this argv executes, if any: as the program, or as a script given to an interpreter."""
+    i = 0
+    while i < len(argv) and (posixpath.basename(argv[i]) in _PREFIXES or "=" in argv[i].split("/")[0]
+                             or (i and argv[i - 1] == "timeout" and argv[i][:1].isdigit())):
+        i += 1                                  # env FOO=1, sudo, timeout 30 ...
+    if i >= len(argv):
+        return None
+    prog = argv[i]
+    t = _path_hit(prog, paths)
+    if t:
+        return t                                # ./scripts/privileged.sh, scripts/privileged.sh
+    if posixpath.basename(prog) in _RUNNERS:
+        script = next((a for a in argv[i + 1:] if not a.startswith("-")), None)
+        if script:
+            return _path_hit(script, paths)     # sh scripts/privileged.sh, bash -x scripts/privileged.sh
     return None
 
 

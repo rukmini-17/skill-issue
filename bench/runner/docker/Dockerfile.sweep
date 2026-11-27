@@ -1,0 +1,16 @@
+# Run sweeps on a Mac (no COOK needed: the model is on Tinker; this only provides Linux for the sandbox).
+# cdb-linux (B's bench/harness/docker/Dockerfile.linux) + a venv (check_env requires one, as on COOK) + Node 22.
+#   brew install colima docker && colima start --cpu 4 --memory 8
+#   docker build -t cdb-linux -f bench/harness/docker/Dockerfile.linux bench/harness/docker
+#   docker build -t cdb-sweep -f bench/runner/docker/Dockerfile.sweep bench/harness
+#   docker run --rm --privileged -v "$PWD:/repo" -w /repo cdb-sweep python -m bench.harness.check_env --isolation netns
+#   docker run --rm --privileged -v "$PWD:/repo" -v "$HOME/.tinker_key:/run/tinker_key:ro" -w /repo cdb-sweep \
+#     sh -c '. /run/tinker_key && python -m bench.runner bench/configs/experiments/mini_sweep_v1_1.yaml --workers 4 --max-cost-usd 3 --runs-dir runs'
+FROM cdb-linux
+RUN apt-get update && apt-get install -y --no-install-recommends curl xz-utils && rm -rf /var/lib/apt/lists/* \
+ && ARCH=$(dpkg --print-architecture | sed 's/amd64/x64/') \
+ && V=$(curl -fsSL https://nodejs.org/dist/latest-v22.x/SHASUMS256.txt | grep -o "node-v22[^ ]*-linux-$ARCH.tar.xz" | head -1) \
+ && curl -fsSL "https://nodejs.org/dist/latest-v22.x/$V" | tar -xJ -C /opt && ln -s /opt/${V%.tar.xz} /opt/node
+COPY requirements.txt /tmp/requirements.txt          # build context: bench/harness
+RUN python3 -m venv /opt/venv && /opt/venv/bin/pip install --no-cache-dir -q -r /tmp/requirements.txt
+ENV PATH=/opt/venv/bin:/opt/node/bin:$PATH CDB_NODE_DIR=/opt/node/bin
