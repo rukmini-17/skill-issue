@@ -7,7 +7,7 @@
 | 1 runner on stubs: dry run, resume after kill, sharding | done |
 | 2 static attacker reproduces seed installs byte for byte | done |
 | 3 Slurm templates + resubmit script | done locally; **the real COOK test job is for a human to run** |
-| 4 adaptive attackers | stages 1–2 done; stage-3 **wiring** now done (`LLMProposer`, tested) but running on a **placeholder prompt** — the real team-written `proposer.md` has not landed (see below); waiting for "continue" |
+| 4 adaptive attackers | stages 1–2 done; stage-3 **wiring** now done (`LLMProposer`, tested) and smoke-tested for real against Tinker (\$12.61, 19/40 episodes, see below) but still running on a **placeholder prompt** — the real team-written `proposer.md` has not landed; waiting for "continue" |
 | 5 sweeps | mini-sweep done (M3 spot-check: 20/20 agree); full-run configs, Mac/COOK shard scripts and the summary tool ready; waiting on the data-v1.2 tag. `adaptive_tinker.yaml`/`adaptive_calibration.yaml` narrowed to the two policies that survived the static grid (2026-11-27). Stage-3 attacker prompt: **team-owned, still not written** |
 
 ## Full runs (M3) — ready, waiting on the data-v1.2 tag (2026-11-27)
@@ -80,6 +80,28 @@ Design notes on the wiring (2026-11-27):
   usual. With no key in the environment `LLMProposer` falls back to `llm.NullModel` automatically (never builds
   an `openai.OpenAI` client or touches the network) — this is what the dry-run and unit tests exercise, and
   what makes it safe to leave `components: {proposer: ...}` set even outside a real sweep.
+
+**Calibration smoke test (2026-11-27) — infra/cost check only, NOT the real calibration.** Ran
+`adaptive_calibration.yaml` for real against Tinker (Qwen3.8-27B agent, Qwen3.6-35B-A3B attacker) to prove the
+`LLMProposer` wiring and cost tracking work end to end before the team's real prompt exists. Two things to
+know before reading any number from it:
+1. A first attempt accidentally ran on **data-v1.1** (this branch was behind the `data-v1.2` tag — now merged
+   in, see the merge commit above) and was killed within ~2 minutes ($0.79 spent, no useful output). The
+   second attempt, reported below, ran on `data-v1.2` correctly.
+2. It used the **placeholder** `proposer.md`, so its numbers say nothing about whether 25 proposals is enough
+   for the real attacker — only that the pipeline (budget tracking, cost cap, cumulative-bypass bookkeeping)
+   does not break under real model calls.
+
+Result: 8 local workers, $15 total cap (split \$1.875/worker) → **19/40 episodes finished, 10 incomplete each
+hit its own worker's budget share (`BackendError: [budget] job budget $1.88 reached`), 10 never started**;
+total spend **\$12.61** (plus the \$0.79 wasted on the data-v1.1 mistake above, ~\$13.40 for the whole exercise).
+No crashes other than the expected budget cutoff; `key leak check: 0 file(s)`. Cumulative-bypass-vs-proposals
+over the 30 episodes that got at least one proposal: **flat at 6.7% (2/30) from proposal 1 through 50** — both
+bypasses came from stage 1 (the handcrafted seed), none from the stage-3 proposer, which is exactly what a
+placeholder prompt that mostly fails to produce parseable JSON should look like (most proposals logged as
+`proposer_error` and simply cost budget, per D13's existing "a failing proposer costs budget" behavior).
+**Do not treat this curve as evidence that 25 proposals is enough** — rerun this config once `proposer.md` has
+the team's real, reviewed attacker prompt; that is the number the team actually needs before the full sweep.
 
 ## Team decisions 2026-11-26 — what changed in D
 
