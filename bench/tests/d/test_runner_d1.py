@@ -220,7 +220,7 @@ def test_harness_crash_leaves_run_incomplete_and_retryable(tmp_path):
     comps_ok = components.build(True)
     orig = components.build
     try:
-        components.build = lambda dry, ov=None: Components(Boom(), StubOracle(), SuccessChecker(), True, {})
+        components.build = lambda dry, ov=None, **_kw: Components(Boom(), StubOracle(), SuccessChecker(), True, {})
         s = run_experiment(cfg(max_scenarios_per_repo=1, policies=["none"]), tmp_path, dry_run=True)
         assert s["error"] == 1
         d = next(d for d in (tmp_path / "t").iterdir() if not d.name.startswith("_"))
@@ -238,7 +238,7 @@ def test_oracle_exception_becomes_unjudgeable(tmp_path):
 
     orig = components.build
     try:
-        components.build = lambda dry, ov=None: Components(StubHarness(), BadOracle(), SuccessChecker(), True, {})
+        components.build = lambda dry, ov=None, **_kw: Components(StubHarness(), BadOracle(), SuccessChecker(), True, {})
         run_experiment(cfg(max_scenarios_per_repo=1, policies=["none"]), tmp_path, dry_run=True)
     finally:
         components.build = orig
@@ -270,7 +270,7 @@ def test_harness_success_result_kept_including_cache_reuse(tmp_path):
     h = SuccessHarness()
     orig = components.build
     try:
-        components.build = lambda dry, ov=None: Components(h, StubOracle(), SuccessChecker(), True, {})
+        components.build = lambda dry, ov=None, **_kw: Components(h, StubOracle(), SuccessChecker(), True, {})
         s = run_experiment(cfg(max_scenarios_per_repo=1, policies=["none", "pin_reapprove"]), tmp_path, dry_run=True)
     finally:
         components.build = orig

@@ -14,7 +14,7 @@ import importlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from bench.interfaces import (Harness, Oracle, Policy, StubAttacker, StubHarness, StubOracle, StubPolicy)
 
@@ -23,7 +23,7 @@ from bench.interfaces import (Harness, Oracle, Policy, StubAttacker, StubHarness
 RUNTIME_POLICIES = frozenset({"deny_by_default_manifest", "delegation_envelope"})
 
 DEFAULTS = {
-    "harness": "bench.harness.run:Harness",         # B (not yet merged)
+    "harness": "bench.harness.run:Harness",         # B
     "oracle": "bench.oracle:Oracle",                # A (on main, data-v1)
     "attacker:static": "bench.attackers.static:StaticAttacker",             # D2
     "attacker:black_box_adaptive": "bench.attackers.adaptive:BlackBoxAttacker",   # D4
@@ -70,6 +70,16 @@ class Components:
     success: SuccessChecker
     dry_run: bool
     overrides: dict[str, str]
+    target_scorer: Callable | None = None      # bench.runner.target.score / stub_score; None = by dry_run
+    budget: Any = None                         # bench.backends.base.Budget shared by this process (Tinker cap)
+
+    def score_target(self, *args, **kw):
+        from bench.runner import target
+        fn = self.target_scorer or (target.stub_score if self.dry_run else target.score)
+        return fn(*args, **kw)
+
+    def budget_exhausted(self) -> bool:
+        return self.budget is not None and self.budget.spent >= self.budget.cap * 0.98
 
     def make_policy(self, name: str) -> Policy:
         from bench.policies import get_policy
@@ -96,10 +106,37 @@ class Components:
         return cls(workdir=workdir, **ctx)
 
 
-def build(dry_run: bool, overrides: dict[str, str] | None = None) -> Components:
+_BUDGETS: dict[float, Any] = {}
+
+
+def process_budget(cap_usd: float | None):
+    """One ``Budget`` per worker process and cap (B's ``bench.backends.base.Budget``): every model
+    call in this process reserves its worst case first, so spending never passes the cap."""
+    if not cap_usd:
+        return None
+    if cap_usd not in _BUDGETS:
+        from bench.backends.base import Budget
+        _BUDGETS[cap_usd] = Budget(cap_usd)
+    return _BUDGETS[cap_usd]
+
+
+def build(dry_run: bool, overrides: dict[str, str] | None = None, *, harness_options: dict | None = None,
+          max_cost_usd: float | None = None) -> Components:
+    """``harness_options`` go to the harness constructor (isolation, observer, run_timeout, setup).
+    ``max_cost_usd`` is this process's hard cap; the runner divides the job's cap by its workers."""
     overrides = dict(overrides or {})
     if dry_run:
         return Components(StubHarness(), StubOracle(), SuccessChecker(), True, overrides)
-    harness = resolve(overrides.get("harness", DEFAULTS["harness"]))()
+    kw = dict(harness_options or {})
+    budget = process_budget(max_cost_usd)
+    if budget is not None:
+        from bench.harness.run import default_model_factory
+
+        def factory(name: str, seed: int, _b=budget):
+            model = default_model_factory(name, seed)
+            model.budget = _b                         # one cap for every run of this process
+            return model
+        kw["model_factory"] = factory
+    harness = resolve(overrides.get("harness", DEFAULTS["harness"]))(**kw)
     oracle = resolve(overrides.get("oracle", DEFAULTS["oracle"]))()
-    return Components(harness, oracle, SuccessChecker(), False, overrides)
+    return Components(harness, oracle, SuccessChecker(), False, overrides, budget=budget)

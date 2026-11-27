@@ -64,8 +64,12 @@ class ExperimentConfig:
     models: list[str] = field(default_factory=lambda: ["qwen3-8b"])
     invocations: list[str] = field(default_factory=lambda: ["natural"])
     repeats: int = 1
-    budget: int = 50                           # adaptive proposals per scenario per policy (D13)
-    stop_at_bypass: bool = True                # adaptive: end a search at its first bypass (queries-to-first-bypass, D10)
+    budget: int = 25                           # adaptive proposals per scenario per policy (team decision 2026-11-26; was 50)
+    stop_at_bypass: bool = True                # adaptive: the runner ends a search at its first bypass (queries-to-first-bypass, D10)
+    # Benign runs (runner output or B's pilot rows) whose goal-on-target hits are subtracted before
+    # a proposal counts as a bypass ("beyond what the task's benign runs already do"). Empty = raw hits.
+    baseline_runs: list[str] = field(default_factory=list)
+    harness_options: dict = field(default_factory=dict)   # B's Harness(...) kwargs: isolation, observer, run_timeout, setup
     components: dict[str, str] = field(default_factory=dict)  # optional dotted-path overrides ("proposer": "pkg.mod:Class")
 
     @classmethod
@@ -91,6 +95,11 @@ class ExperimentConfig:
             raise ValueError("attack experiments need at least one attacker")
         if self.repeats < 1:
             raise ValueError("repeats must be >= 1")
+        if self.budget < 1:
+            raise ValueError("budget must be >= 1")
+        bad = set(self.harness_options) - {"isolation", "observer", "run_timeout", "setup", "max_steps", "mock"}
+        if bad:
+            raise ValueError(f"unknown harness_options {sorted(bad)}")
 
 
 def _repos(cfg: ExperimentConfig) -> list[str]:
