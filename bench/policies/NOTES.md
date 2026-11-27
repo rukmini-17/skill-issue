@@ -142,6 +142,15 @@ script-internal write — an `fs_write` effect inside a `run_command`, not an ag
 `P3(not-tool-visible)` (same class as ops-office `violation_04`, gap #2 above). Totals
 unchanged: 15/16 tool-visible violations blocked, 0/16 clean over-blocked.
 
+**Re-verified on `data-v1.2`** (after `fix/matcher-pilot` + `data-fix/v1.2` merged to
+`main`; `check_data` 3409/3409). C2 `static_decisions.csv` and C3 `runtime_checks.csv`
+both regenerate **byte-identical** to the committed reports: the three v1.2 delegation
+changes (release-tools-t01 read += `src/relkit/version.py`, and the shop-web TDD-skill
+reads) widen scopes the policies don't flag and touch no trace in the C3 set, so no
+C2/C3 decision flips. The `llm_reviewer` default (`qwen3.6-35b-a3b-tinker`) now resolves
+on the merged tree (backend `tinker`, `Qwen/Qwen3.6-35B-A3B`); its `--with-llm` column
+still needs a Tinker key + spend, so it runs in the pilot, not here.
+
 ## Open questions
 
 - **Reviewer model (team decision 2026-11-26, per D12):** `llm_reviewer` uses
