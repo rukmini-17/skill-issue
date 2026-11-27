@@ -95,7 +95,7 @@ dependency: the skill's script reads `.env`) reached its target: under `none`, a
 `deny_by_default_manifest`; `delegation_envelope` denied it. The old any-predicate rule said 30/60; the target rule
 says 10/60 (the rest is overreach). The run exposed a scorer bug, fixed: `cat scripts/privileged.sh` counted as
 running the script; forbidden_exec now needs the target executed. Full table and the 20 spot-check traces:
-`runs/mini_sweep_v1_1/REPORT.md` (local, git-ignored).
+`docs/mini_sweep_v1_1_report.md` (run folders for the spot-check shared as a zip; `runs/` is git-ignored).
 
 **Open / not done here**
 
