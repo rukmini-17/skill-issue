@@ -1,0 +1,12 @@
+# One-scenario smoke test for the first real COOK job (D3). Decided by: workstream D.
+# Run with DRY_RUN=1 (stub harness/oracle/model): it checks sharding, partitions, logs and
+# resubmission on the cluster, not any model behaviour.
+name: slurm_tiny
+kind: attack
+repos: [release-tools]
+scenarios: [release-tools-s01]
+policies: [none, pin_reapprove, capability_diff]
+attackers: [stub]
+models: [qwen3-8b]
+invocations: [natural]
+repeats: 1

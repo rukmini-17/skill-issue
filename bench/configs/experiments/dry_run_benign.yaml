@@ -1,0 +1,9 @@
+# Dry-run benign grid (D1): benign updates through each policy, then the task. Decided by: workstream D.
+name: dry_run_benign
+kind: benign_updates
+repos: [all]
+tasks: all
+policies: [none, pin_reapprove, new_permissions_only, capability_diff, deny_by_default_manifest, delegation_envelope]
+models: [qwen3-8b]
+invocations: [natural]
+repeats: 1

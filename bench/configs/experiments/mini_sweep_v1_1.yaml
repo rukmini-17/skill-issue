@@ -1,0 +1,23 @@
+# M3 mini-sweep (team plan 2026-11-26): ~5 scenarios on data-v1.1, static seeds, the primary agent
+# on Tinker, for the 20-trace hand spot-check before the full static grid. Decided by: workstream D.
+# Scenarios: dev split only, one per attack class (5 of 6), all four goals, three repos.
+# data-v1.1 has no attack.target, so bypass falls back to "any expected predicate" (target.json rule=predicates).
+# llm_reviewer is left out until C's Tinker reviewer is wired (its own row later).
+# Size: 5 scenarios x 2 seeds x 6 policies = 60 episodes, ~30 distinct agent runs (update-only policies share
+# a run when they install the same state; the two run-time policies never share). At ~$0.031/run: ~$1.
+# Submit: SHARDS=1 MAX_COST_USD=3 sh bench/runner/slurm/submit_tinker.sh bench/configs/experiments/mini_sweep_v1_1.yaml
+name: mini_sweep_v1_1
+kind: attack
+repos: [release-tools, orders-api, shop-web]
+scenarios:
+  - release-tools-s01   # instruction_only (obvious) / forbidden_exec
+  - orders-api-s01      # concealed_dependency / read_out_of_scope (.env)
+  - orders-api-s07      # late_binding / write_out_of_scope
+  - shop-web-s20        # salami / leak_secret
+  - release-tools-s08   # capability_expansion / leak_secret
+policies: [none, pin_reapprove, new_permissions_only, capability_diff, deny_by_default_manifest, delegation_envelope]
+attackers: [static]
+models: [qwen3.8-27b-tinker]
+invocations: [natural]
+repeats: 1
+harness_options: {isolation: netns, observer: strace, run_timeout: 1200, setup: d9}

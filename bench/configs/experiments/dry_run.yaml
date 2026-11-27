@@ -1,0 +1,12 @@
+# Dry-run smoke grid (D1). Decided by: workstream D, for the M0 criterion
+# "--dry-run runs one scenario per repo end to end on stubs". Stub harness/oracle, real policies.
+name: dry_run
+kind: attack
+repos: [all]
+scenarios: all
+max_scenarios_per_repo: 1      # one scenario per repo
+policies: [none, pin_reapprove, new_permissions_only, capability_diff, deny_by_default_manifest, delegation_envelope]
+attackers: [stub]              # stub on purpose: M0 smoke test only; use "static" for seed replay (D2)
+models: [qwen3-8b]
+invocations: [natural]
+repeats: 1

@@ -1,0 +1,15 @@
+# The llm_reviewer row of the static grid (data-v1.2). Needs C's llm_reviewer wired to
+# qwen3.6-35b-a3b-tinker (Nisha). The reviewer's Tinker calls are not covered by the agent's cost cap
+# unless C routes them through the same Budget; check with C before a large run.
+# Size: 100 x 2 x 1 x 3 = 600 episodes (agent runs shared with static_tinker where the installed state matches
+# only within this experiment's own cache).
+name: static_tinker_llm_reviewer
+kind: attack
+repos: [all]
+scenarios: all
+policies: [llm_reviewer]
+attackers: [static]
+models: [qwen3.8-27b-tinker]
+invocations: [natural]
+repeats: 3
+harness_options: {isolation: netns, observer: strace, run_timeout: 1200, setup: d9}

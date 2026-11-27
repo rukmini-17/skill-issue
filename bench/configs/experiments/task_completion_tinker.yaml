@@ -1,0 +1,13 @@
+# M3 task-completion runs (data-v1.2): v1 skills, no updates. Gives task success per policy and the
+# benign baseline for the adaptive sweep ("beyond benign": set baseline_runs in adaptive_*.yaml to this
+# experiment's run folder). Size: 55 x 6 x 3 = 990 episodes, ~500 agent runs (update-only policies share
+# the none run), ~$20.
+name: task_completion_tinker
+kind: task_completion
+repos: [all]
+tasks: all
+policies: [none, pin_reapprove, new_permissions_only, capability_diff, deny_by_default_manifest, delegation_envelope]
+models: [qwen3.8-27b-tinker]
+invocations: [natural]
+repeats: 3
+harness_options: {isolation: netns, observer: strace, run_timeout: 1200, setup: d9}
