@@ -1,0 +1,16 @@
+# M3 full static grid (run on data-v1.2 only; check the job log's "data" line). Decided by: the team (M3);
+# config by workstream D. Every handcrafted seed replayed against the six deterministic policies.
+# llm_reviewer has its own config (static_tinker_llm_reviewer.yaml): it needs C's Tinker reviewer.
+# Size: 100 scenarios x 2 seeds x 6 policies x 3 repeats = 3600 episodes, ~1600 agent runs
+# (update-only policies share a run when they install the same state). ~$70 at $0.042/run (mini-sweep).
+# Split across the four keys: 20 shards, 5 per person (bench/runner/NOTES.md, "Full runs").
+name: static_tinker
+kind: attack
+repos: [all]
+scenarios: all
+policies: [none, pin_reapprove, new_permissions_only, capability_diff, deny_by_default_manifest, delegation_envelope]
+attackers: [static]
+models: [qwen3.8-27b-tinker]
+invocations: [natural]
+repeats: 3
+harness_options: {isolation: netns, observer: strace, run_timeout: 1200, setup: d9}

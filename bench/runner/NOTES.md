@@ -8,7 +8,48 @@
 | 2 static attacker reproduces seed installs byte for byte | done |
 | 3 Slurm templates + resubmit script | done locally; **the real COOK test job is for a human to run** |
 | 4 adaptive attackers | **done except the stage-3 proposer (team-supplied); waiting for "continue"** |
-| 5 sweeps | **ready to submit** on Tinker (see "Team decisions 2026-11-26"); humans launch them |
+| 5 sweeps | mini-sweep done (M3 spot-check: 20/20 agree); full-run configs, Mac/COOK shard scripts and the summary tool ready; waiting on the data-v1.2 tag. Stage-3 attacker prompt: **team-owned, not written** |
+
+## Full runs (M3) — ready, waiting on the data-v1.2 tag (2026-11-27)
+
+Run only on data-v1.2 (each job prints its data tag; `git describe --tags --match 'data-v*'`). 3 repeats (D11).
+Cost estimates use the mini-sweep's $0.042 per agent run (27B, Tinker).
+
+| config | what | episodes | agent runs (shared) | est. cost |
+|---|---|---|---|---|
+| `task_completion_tinker.yaml` | v1 skills, no updates; task success + **benign baseline** for "beyond benign" | 990 | ~500 | ~$20 |
+| `static_tinker.yaml` | all 200 seeds x 6 deterministic policies | 3600 | ~1600 | ~$70 |
+| `benign_tinker.yaml` | benign versions as updates (unnecessary prompts, task cost) | 990 | ~500 | ~$20 |
+| `static_tinker_llm_reviewer.yaml` | llm_reviewer row; needs C's Tinker reviewer; reviewer calls are extra | 600 | ~270 | ~$12 + reviewer |
+
+**Order.** task_completion first (its runs are the baseline: put `runs/task_completion_tinker` in
+`baseline_runs:` of `adaptive_*.yaml`), then static, then benign. Adaptive only after the go/no-go on the
+static `none` numbers (team gate, 2026-11-27).
+
+**Split across the four keys.** 20 shards per experiment; each person runs five on their own key:
+Vasundhara 0–4, Shreya 5–9, Nisha 10–14, Rukmini 15–19. Shards are hash-balanced by group, so sizes vary
+(static: 126–270 episodes); the cost cap is per shard, so a big shard may need a second run of the same line.
+
+```sh
+# Mac (Colima; one-time setup in bench/runner/docker/Dockerfile.sweep). One shard at a time, resumable:
+MAX_COST_USD=10 sh bench/runner/scripts/run_shard_mac.sh bench/configs/experiments/static_tinker.yaml 0 20
+# COOK: a person's five shards as one array (2 running at a time):
+SHARDS=20 ARRAY=0-4 MAX_COST_USD=10 sh bench/runner/slurm/submit_tinker.sh bench/configs/experiments/static_tinker.yaml
+# progress / incomplete shards:
+python -m bench.runner.shards bench/configs/experiments/static_tinker.yaml --shards 20 --runs-dir <runs root>
+```
+
+**Tables.** `python -m bench.runner.summarize runs/<experiment> [--out docs/<experiment>_tables.md]` gives the
+two-level policy report the team agreed on: (1) update-time decisions on attack updates, model-free;
+(2) damage on *live* attacks only (those that reach their target under `none`), with 95% bootstrap intervals
+resampling whole scenarios (D9); (3) skill-read rate (completed read of the task's own SKILL.md, not
+`skill_loads`), task success, step-limit endings, oracle violations. Benign experiments: unnecessary
+asks/denials and task success per policy. Checked on the mini-sweep: its table 2 reproduces the hand count
+(delegation_envelope prevents 5/5 live pairs, deny_by_default_manifest 3/5).
+
+**Stage-3 attacker.** Not written. The attacker instruction text is team-written and reviewed (D13); the hook
+(`Proposer` in `bench/attackers/adaptive.py`) and the model client (`bench/attackers/llm.py`) are ready. Until
+it exists, an adaptive search is the seeds plus their template variations.
 
 ## Team decisions 2026-11-26 — what changed in D
 
