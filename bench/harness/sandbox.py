@@ -369,8 +369,13 @@ class Sandbox:
     def _path(self) -> str:
         # The harness's own interpreter dir first, so python3/pytest/ruff and the
         # packages setup.sh needs (openpyxl) come from the benchmark's venv.
+        # Then $CDB_NODE_DIR (COOK: a user-installed Node, no module), then the host PATH.
         host = os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin")
-        return os.pathsep.join([str(Path(sys.executable).parent), host])
+        parts = [str(Path(sys.executable).parent)]
+        node_dir = os.environ.get("CDB_NODE_DIR")
+        if node_dir and Path(node_dir).is_dir():
+            parts.append(node_dir)
+        return os.pathsep.join(parts + [p for p in host.split(os.pathsep) if p and p not in parts])
 
     def _inner_proxy_url(self) -> str:
         return self.proxy_url

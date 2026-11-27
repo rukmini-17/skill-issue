@@ -2,18 +2,29 @@
 # B5 utility pilot on COOK: one model, all 55 tasks x 3 repeats (165 runs), v1,
 # policy none, split over an array of shards. Each array task starts its own
 # llama-server on the node, waits for it, runs its shard, and stops the server.
-# HUMANS LAUNCH THIS (Part 0 rule 9). From the repo root, venv made on the login node:
+# HUMANS LAUNCH THIS (Part 0 rule 9). On COOK (ssh -l 'rnazre@umass.edu' cook.cs.umass.edu),
+# from the repo root, venv made on the login node. Use the submit helper, which
+# picks the partition from models.yaml and sets --mem (gtx 16G, t4 24G, rtx 40G):
 #
-#   MODEL=qwen3-8b-llamacpp
-#   PART=$(.venv/bin/python -m bench.backends get $MODEL partition)     # gtx / t4 / rtx
-#   sbatch -p "$PART" --export=ALL,MODEL=$MODEL bench/harness/slurm/pilot_cook.sbatch
+#   sh bench/harness/scripts/cook_submit.sh pilot qwen3-8b-llamacpp
 #   squeue -u $USER
 #   tail -f runs/pilot/logs/cdb-pilot-<jobid>_<shard>.out
-#   .venv/bin/python -m bench.harness.pilot run --model $MODEL --dry-run   # what is left
+#   .venv/bin/python -m bench.harness.pilot run --model qwen3-8b-llamacpp --dry-run   # what is left
 #
+# Modules, Python and the server launch: bench/harness/slurm/cook_env.sh. Prefer gtx
+# (t4/rtx queues can wait long). One gtx node has reported a faulty GPU3; if a shard
+# fails with a CUDA error on it, resubmit with --exclude=<that node>.
 # The array has 8 shards (8 Slurm jobs). Runs are resumable: resubmitting the
 # same command only runs what is missing (killed jobs, the 2-hour limit).
 # Override shards with --array=0-3 AND SHARDS=4 together.
+# Explicit-invocation row (team decision 8 wording; runs go to <model>+explicit-v2/):
+#   INVOCATION=explicit sh bench/harness/scripts/cook_submit.sh pilot qwen3-8b-llamacpp
+# 14B confirmation row (explicit-v2 + decision 9) on t4, 10 shards, at most 6 at once
+# (t4 has 6 GPUs on 2 nodes); see PILOT.md "14B confirmation pilot":
+#   INVOCATION=explicit RUN_TIMEOUT=1200 SHARDS=10 \
+#     sh bench/harness/scripts/cook_submit.sh pilot qwen3-14b-llamacpp --array=0-9%6
+# Rerun runs whose model server failed (run_end=error), on top of the missing ones:
+#   RETRY_AGENT_ERRORS=1 sh bench/harness/scripts/cook_submit.sh pilot qwen3-8b-llamacpp
 #SBATCH --job-name=cdb-pilot
 #SBATCH --partition=gtx
 #SBATCH --gres=gpu:1
@@ -26,7 +37,10 @@
 set -u
 cd "${SLURM_SUBMIT_DIR:-.}"
 mkdir -p runs/pilot/logs
-PY="${PYTHON:-.venv/bin/python}"
+. bench/harness/slurm/cook_env.sh           # module load per partition; sets PY, LLAMA_SERVER
+# Fail before starting the server if the sandbox lacks a skill's or reference's dependency
+# (pilot run ops-office-t01 on COOK: the skill script could not run).
+"$PY" -m bench.harness.check_env --isolation netns || { echo "environment check failed; see above"; exit 2; }
 : "${MODEL:?set MODEL, e.g. --export=ALL,MODEL=qwen3-8b-llamacpp}"
 SHARDS="${SHARDS:-${SLURM_ARRAY_TASK_COUNT:-8}}"
 SHARD="${SLURM_ARRAY_TASK_ID:-0}"
@@ -44,15 +58,23 @@ echo "job ${SLURM_JOB_ID:-?} shard $SHARD/$SHARDS model $MODEL node $(hostname) 
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/dev/null || true
 echo "server: $SERVE"
 SLOG="runs/pilot/logs/llama-server-${SLURM_JOB_ID:-x}_${SHARD}.log"
-eval "$SERVE" > "$SLOG" 2>&1 &
-SRV=$!
-trap 'kill $SRV 2>/dev/null; wait $SRV 2>/dev/null' EXIT
+eval "cdb_start_server \"\$SLOG\" $SERVE"
+trap 'kill $SRV 2>/dev/null; wait $SRV 2>/dev/null; cdb_log_buffers "$SLOG" exit' EXIT
 
-"$PY" -m bench.backends wait "$MODEL" --timeout 900 || { echo "server not ready; see $SLOG"; tail -n 30 "$SLOG"; exit 3; }
+"$PY" -m bench.backends wait "$MODEL" --timeout 900 || { echo "server not ready; see $SLOG"; cdb_log_buffers "$SLOG"; tail -n 30 "$SLOG"; exit 3; }
+cdb_log_buffers "$SLOG"
 
 ELAPSED=$(( $(date +%s) - START ))
-"$PY" -m bench.harness.pilot run --model "$MODEL" --shard "$SHARD/$SHARDS" --workers 1 \
-    --deadline-s $(( LIMIT_S - ELAPSED - 300 )) --no-wait
+# RETRY_AGENT_ERRORS=1 also reruns runs that ended run_end=error (model server failed);
+# by default they count as complete. Or move them aside first: pilot set-aside --dry-run.
+RETRY=""; [ "${RETRY_AGENT_ERRORS:-0}" = 1 ] && RETRY="--retry-agent-errors"
+# SETUP: agent setup, default d9 (decision 9: max_tokens 8192 + truncation nudge; rows get +d9).
+# SETUP=pre-d9 resumes an early-pilot row (max_tokens 4096, no nudge) unchanged.
+# RUN_TIMEOUT: seconds per run (default 1800); a shard starts no run it cannot finish.
+# REPEATS: repeats per task (default 3); REPEATS=1 runs r0 only. Keep it the same on resubmit.
+"$PY" -m bench.harness.pilot run --model "$MODEL" --invocation "${INVOCATION:-natural}" $RETRY \
+    --setup "${SETUP:-d9}" --run-timeout "${RUN_TIMEOUT:-1800}" --repeats "${REPEATS:-3}" \
+    --shard "$SHARD/$SHARDS" --workers 1 --deadline-s $(( LIMIT_S - ELAPSED - 300 )) --no-wait
 RC=$?
 echo "pilot exit $RC (0 = shard complete, 2 = runs left; resubmit to resume)"
 exit $RC

@@ -1,6 +1,12 @@
 """Run one task once with a real model, benign (v1 skills, policy none). For checkpoint 3 and pilots.
 
     .venv/bin/python -m bench.harness.run_task ops-office-t05 --model qwen3-8b-ollama
+    .venv/bin/python -m bench.harness.run_task ops-office-t05 --model qwen3-8b-llamacpp \
+        --isolation netns --observer strace --judge          # first real COOK run
+
+``--judge`` also judges the trace with A's oracle (bench.oracle) and prints
+trace validity (A's trace_schema.json, via the oracle's problems list), the
+verdict and predicates; it writes ``oracle.json`` next to the trace.
 
 Models come from bench/configs/models.yaml (or $CDB_MODELS).
 
@@ -19,6 +25,7 @@ from pathlib import Path
 
 import yaml
 
+from bench.harness import agent as agent_mod
 from bench.harness.run import REPO_ROOT, REPOS, Harness
 from bench.harness.skills import repo_install_set
 from bench.interfaces import Delegation, RunSpec, StubPolicy, Task
@@ -42,6 +49,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--invocation", default="natural", choices=["natural", "explicit"])
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--isolation", default="auto")
+    ap.add_argument("--observer", default="auto", choices=["auto", "strace", "none"])
+    ap.add_argument("--judge", action="store_true", help="judge the trace with A's oracle")
+    ap.add_argument("--setup", default=None,
+                    help="agent setup (bench.harness.agent.SETUPS; default d9: max_tokens 8192 + one "
+                         "truncation nudge; pre-d9 = the early pilot's)")
+    ap.add_argument("--all-calls-per-turn", action="store_true",
+                    help="debugging only: run every tool call of a turn (default: only the first, "
+                         "team decision 6)")
     ap.add_argument("--out", type=Path, default=REPO_ROOT / "runs" / "dev")
     ap.add_argument("--keep-workspace", action="store_true")
     a = ap.parse_args(argv)
@@ -53,7 +68,9 @@ def main(argv: list[str] | None = None) -> int:
     spec = RunSpec(run_id=run_id, scenario=None, task=task, installed=repo_install_set(REPOS / task.repo_id),
                    policy=policy, model=a.model, invocation=a.invocation, mock_override=None,
                    out_dir=a.out / run_id, seed=a.seed)
-    trace = Harness(isolation=a.isolation, keep_workspace=a.keep_workspace).run(spec)
+    trace = Harness(isolation=a.isolation, observer=a.observer, keep_workspace=a.keep_workspace,
+                    one_call_per_turn=not a.all_calls_per_turn,
+                    setup=a.setup or agent_mod.DEFAULT_SETUP).run(spec)
     meta = json.loads((spec.out_dir / "meta.json").read_text())
     lines = [json.loads(l) for l in trace.read_text().splitlines()]
     tools = [f"{l['tool']}:{l['status']}" for l in lines if "tool" in l and l["status"] != "requested"]
@@ -61,13 +78,42 @@ def main(argv: list[str] | None = None) -> int:
         "run_dir": str(spec.out_dir), "isolation": meta.get("isolation"), "observer": meta.get("observer"),
         "mock": meta.get("mock"), "run_end": meta.get("run_end"), "steps": meta.get("steps"),
         "tool_calls": tools, "malformed_calls": len(meta.get("malformed_calls") or []),
-        "skill_loads": meta.get("skill_loads"), "success": (meta.get("success") or {}).get("success"),
+        "skill_loads": meta.get("skill_loads"), "skill_uses": meta.get("skill_uses"), "success": (meta.get("success") or {}).get("success"),
         "events": sorted({l["event"] for l in lines if "event" in l}),
         "timings": meta.get("timings"), "harness_error": meta.get("harness_error"),
         "agent_error": meta.get("agent_error"),
+        "one_call_per_turn": meta.get("one_call_per_turn"),
+        "parallel_tool_calls": ((meta.get("model_config") or {}).get("decoding") or {}).get("parallel_tool_calls"),
+        "behaviour": meta.get("behaviour"),          # multi-call / blind-write turns, thinking
+        "turns": [{k: t[k] for k in ("step", "tool_calls", "completion_tokens", "reasoning_chars",
+                                     "blind_write")} for t in meta.get("turns") or []],
     }
+    if a.judge:
+        summary.update(judge(trace, task, spec.out_dir))
     print(json.dumps(summary, indent=1))
     return 0 if not meta.get("harness_error") else 1
+
+
+def judge(trace: Path, task: Task, out_dir: Path) -> dict:
+    """A's oracle on the trace. ``trace_valid``: every line passes A's trace schema
+    (the oracle reports schema failures as problems) and the trace ends with run_end."""
+    from dataclasses import asdict
+
+    from bench.common.data import load_repo
+    from bench.oracle import Oracle
+    canaries = load_repo(task.repo_id).canaries
+    res = Oracle().judge(trace, task, canaries)
+    (out_dir / "oracle.json").write_text(json.dumps(asdict(res), indent=1))
+    raw = [l for l in trace.read_text().splitlines() if l.strip()]
+    ends = bool(raw) and json.loads(raw[-1]).get("event") == "run_end"
+    def mask(text: str) -> str:                     # rule 12: no canary values on the terminal
+        for c in canaries:
+            if c.get("value"):
+                text = text.replace(c["value"], f"<canary:{c.get('id')}>")
+        return text[:300]
+    return {"trace_valid": not res.problems and ends, "trace_problems": [mask(x) for x in res.problems[:5]],
+            "verdict": res.verdict, "predicates": res.predicates, "attempts": res.attempts,
+            "p5_match": res.p5_match}
 
 
 if __name__ == "__main__":

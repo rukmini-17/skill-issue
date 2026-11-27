@@ -7,7 +7,8 @@
 #   base_url        OpenAI-compatible /v1 endpoint. ${VAR:-default} is expanded;
 #                   pilot jobs set CDB_PORT per job so servers on one node don't clash.
 #   model           name sent in requests (vLLM --served-model-name, llama.cpp --alias,
-#                   Tinker: a tinker:// sampler path)
+#                   Tinker: a base-model ID such as Qwen/Qwen3-8B, or a tinker://
+#                   path for a trained checkpoint)
 #   model_file      GGUF path (llamacpp)
 #   quantization    recorded in meta.json. Never compare quantized and full-precision
 #                   results for the same model in one table (D11).
@@ -16,14 +17,28 @@
 #   candidate       true = in the pilot (Qwen3-4B/8B/14B/32B, D11)
 #   tool_mode       native (server parses tool calls) | prompt (Qwen3 tool format in the prompt)
 #   thinking        null = model default (Qwen3: on); false/true sets enable_thinking
-#   server          settings for the command that starts the server (bench.backends serve-cmd)
+#   parallel_tool_calls  default false (team decision 6): sent with native tool calls so the
+#                   server returns at most one call where it honours the field; null omits
+#                   it for a server that rejects it. The harness runs one call per turn anyway.
+#   send_parallel_tool_calls  default true; false = never send parallel_tool_calls (Tinker:
+#                   it rejects a response with several tool calls under parallel_tool_calls=false
+#                   with HTTP 422, job 3444). Recorded in meta.json model_config.decoding.
+#   server          settings for the command that starts the server (bench.backends serve-cmd).
+#                   server.ctx_size is the context window; it is recorded in meta.json
+#                   (model_config.ctx_size) because it affects results. Tinker: the
+#                   service's context, recorded the same way (no server is started).
 #   api_key_env     environment variable holding the key (never the key itself)
 # Decoding defaults (D11): agent temperature 0.2. C's reviewer and D's attacker
 # override temperature in code (0 and 0.8).
 #
-# UNVERIFIED (check before the pilot): the GGUF file names under /nfs/opt/models,
-# the llama-server binary on COOK, A100 memory (40 or 80 GB) for 32B, Tinker
-# sampler paths and tool support. See bench/harness/NOTES.md, Open questions.
+# COOK facts (checked on the cluster 2026-11-25; see bench/harness/NOTES.md "COOK"):
+# GGUFs live in a revision subfolder; partitions gtx (GTX 1080 Ti 11 GB), t4
+# (Tesla T4 15 GB), rtx (RTX PRO 4500 Blackwell 32 GB), all with a 2-hour limit.
+# llama-server 0.5.0 (commit 7fe450e) in both modules. Server flags follow CSCF's
+# validated examples (-ngl 999 -sm none -fa off -fit off -b 128 -ub 128 -t <cpus>);
+# their sampling flags are not used. CSCF validated only a 2048-token context: our
+# 16384 is untested for memory until the first job per partition logs the model and
+# KV buffer sizes (NOTES.md). Still unverified: A100 memory for the vLLM 32B entry.
 
 models:
   # ------------------------------------------------------------ COOK, llama.cpp
@@ -32,56 +47,85 @@ models:
     candidate: true
     base_url: http://127.0.0.1:${CDB_PORT:-8080}/v1
     model: qwen3-4b
-    model_file: ${CDB_MODEL_DIR:-/nfs/opt/models}/Qwen3-4B-Q4_K_M.gguf
+    model_file: ${CDB_MODEL_DIR:-/nfs/opt/models}/Qwen3-4B-GGUF/bc640142c66e1fdd12af0bd68f40445458f3869b/Qwen3-4B-Q4_K_M.gguf
     quantization: Q4_K_M
-    hardware: cook-gtx
+    hardware: cook-gtx-1080ti-11gb
     partition: gtx
     family: qwen3
     temperature: 0.2
     max_tokens: 4096
-    server: {ctx_size: 32768, n_gpu_layers: 99}
+    server: {ctx_size: 16384, n_gpu_layers: 999, split_mode: none, flash_attn: false, fit: false,
+             batch_size: 128, ubatch_size: 128, threads: "${SLURM_CPUS_PER_TASK:-4}"}
 
   qwen3-8b-llamacpp:
     backend: llamacpp
     candidate: true
     base_url: http://127.0.0.1:${CDB_PORT:-8080}/v1
     model: qwen3-8b
-    model_file: ${CDB_MODEL_DIR:-/nfs/opt/models}/Qwen3-8B-Q4_K_M.gguf
+    model_file: ${CDB_MODEL_DIR:-/nfs/opt/models}/Qwen3-8B-GGUF/7c41481f57cb95916b40956ab2f0b139b296d974/Qwen3-8B-Q4_K_M.gguf
     quantization: Q4_K_M
-    hardware: cook-gtx
+    hardware: cook-gtx-1080ti-11gb
     partition: gtx
     family: qwen3
     temperature: 0.2
     max_tokens: 4096
-    server: {ctx_size: 32768, n_gpu_layers: 99}
+    server: {ctx_size: 16384, n_gpu_layers: 999, split_mode: none, flash_attn: false, fit: false,
+             batch_size: 128, ubatch_size: 128, threads: "${SLURM_CPUS_PER_TASK:-4}"}
 
   qwen3-14b-llamacpp:
     backend: llamacpp
     candidate: true
     base_url: http://127.0.0.1:${CDB_PORT:-8080}/v1
     model: qwen3-14b
-    model_file: ${CDB_MODEL_DIR:-/nfs/opt/models}/Qwen3-14B-Q4_K_M.gguf
+    model_file: ${CDB_MODEL_DIR:-/nfs/opt/models}/Qwen3-14B-GGUF/530227a7d994db8eca5ab5ced2fb692b614357fd/Qwen3-14B-Q4_K_M.gguf
     quantization: Q4_K_M
-    hardware: cook-t4
+    hardware: cook-t4-15gb
     partition: t4
     family: qwen3
     temperature: 0.2
     max_tokens: 4096
-    server: {ctx_size: 32768, n_gpu_layers: 99}
+    server: {ctx_size: 16384, n_gpu_layers: 999, split_mode: none, flash_attn: false, fit: false,
+             batch_size: 128, ubatch_size: 128, threads: "${SLURM_CPUS_PER_TASK:-4}"}
 
+  # 32B on rtx: 16384 by default. 32768 only with a quantized KV cache
+  # (--cache-type-k/-v q8_0), and only if this build allows it with Flash Attention
+  # off (llama.cpp needs FA for a quantized V cache); record it as a separate entry.
+  # Also the default model for C's llm_reviewer and D's attacker. sbatch --mem=40G.
   qwen3-32b-llamacpp:
     backend: llamacpp
     candidate: true
     base_url: http://127.0.0.1:${CDB_PORT:-8080}/v1
     model: qwen3-32b
-    model_file: ${CDB_MODEL_DIR:-/nfs/opt/models}/Qwen3-32B-Q4_K_M.gguf
+    model_file: ${CDB_MODEL_DIR:-/nfs/opt/models}/Qwen3-32B-GGUF/938a7432affaec9157f883a87164e2646ae17555/Qwen3-32B-Q4_K_M.gguf
     quantization: Q4_K_M
-    hardware: cook-rtx
+    hardware: cook-rtx-pro-4500-32gb
     partition: rtx
     family: qwen3
     temperature: 0.2
     max_tokens: 4096
-    server: {ctx_size: 32768, n_gpu_layers: 99}
+    server: {ctx_size: 16384, n_gpu_layers: 999, split_mode: none, flash_attn: false, fit: false,
+             batch_size: 128, ubatch_size: 128, threads: "${SLURM_CPUS_PER_TASK:-4}"}
+
+  # Same GGUF on 4x GTX 1080 Ti (11 GB each) on one gtx node, layers split across the GPUs
+  # (TA's COOK quick guide: --gres=gpu:4 --ntasks=1, llama.cpp -sm layer; a 27B Q4 model ran at
+  # ~14 tok/s). 19.8 GB of weights + ~4.3 GB KV at 16384 (64 layers x 8 KV heads x 128 x 2 x f16)
+  # + compute buffers: about 26 GB over 44 GB. An alternative placement of the 32B model to
+  # compare with rtx, not a separate candidate.
+  qwen3-32b-llamacpp-gtx4:
+    backend: llamacpp
+    base_url: http://127.0.0.1:${CDB_PORT:-8080}/v1
+    model: qwen3-32b
+    model_file: ${CDB_MODEL_DIR:-/nfs/opt/models}/Qwen3-32B-GGUF/938a7432affaec9157f883a87164e2646ae17555/Qwen3-32B-Q4_K_M.gguf
+    quantization: Q4_K_M
+    hardware: cook-gtx-1080ti-x4
+    partition: gtx
+    gpus: 4
+    mem: 32G
+    family: qwen3
+    temperature: 0.2
+    max_tokens: 4096
+    server: {ctx_size: 16384, n_gpu_layers: 999, split_mode: layer, flash_attn: false, fit: false,
+             batch_size: 128, ubatch_size: 128, threads: "${SLURM_CPUS_PER_TASK:-4}"}
 
   # ------------------------------------------------------------------ A100, vLLM
   qwen3-4b-vllm:
@@ -135,31 +179,63 @@ models:
     server: {ctx_size: 32768, gpu_memory_utilization: 0.95}
 
   # ---------------------------------------------------------------------- Tinker
-  # model must be a tinker:// sampler path; set CDB_TINKER_QWEN3_8B /
-  # CDB_TINKER_QWEN3_32B. Not candidates for the pilot by default (credit cap).
+  # Base-model IDs sampled directly through the OpenAI-compatible endpoint (tinker:// paths are
+  # only for trained checkpoints). tool_mode native: the smoke test (Qwen/Qwen3-8B, 2026-11-26)
+  # returned finish_reason tool_calls with structured tool_calls. Tinker bills prompt tokens
+  # (prefill) as well as sampled tokens; `price` is USD per million tokens, from Models &
+  # Pricing (thinkingmachines.ai/tinker/pricing and tinker-docs, read 2026-11-26). Where the two
+  # pages disagree the higher figure is used, so cost estimates err high. `price` drives
+  # meta.json cost_usd and the pilot's --max-cost-usd cap. ctx: the service's context.
   qwen3-8b-tinker:
     backend: tinker
     base_url: https://tinker.thinkingmachines.dev/services/tinker-prod/oai/api/v1
-    model: ${CDB_TINKER_QWEN3_8B}
+    model: Qwen/Qwen3-8B
     api_key_env: TINKER_API_KEY
     quantization: tinker-default
     hardware: tinker
     family: qwen3
-    tool_mode: prompt
+    tool_mode: native
+    send_parallel_tool_calls: false     # Tinker 422s a multi-call response under false (job 3444)
     temperature: 0.2
     max_tokens: 4096
+    price: {prefill: 0.195, cached_prefill: 0.039, sample: 0.60}
+    server: {ctx_size: 32768}
 
-  qwen3-32b-tinker:
+  # Qwen3.6-35B-A3B (MoE, 3B active), 64K context. Prefill $0.45 (pricing page) / $0.54
+  # (docs): 0.54 used.
+  qwen3.6-35b-a3b-tinker:
     backend: tinker
     base_url: https://tinker.thinkingmachines.dev/services/tinker-prod/oai/api/v1
-    model: ${CDB_TINKER_QWEN3_32B}
+    model: Qwen/Qwen3.6-35B-A3B
     api_key_env: TINKER_API_KEY
     quantization: tinker-default
     hardware: tinker
     family: qwen3
-    tool_mode: prompt
+    tool_mode: native
+    send_parallel_tool_calls: false     # Tinker 422s a multi-call response under false (job 3444)
     temperature: 0.2
     max_tokens: 4096
+    price: {prefill: 0.54, cached_prefill: 0.108, sample: 1.335}
+    server: {ctx_size: 65536}
+
+  # Qwen3.8-27B (dense), 64K-context offering. About 4x the sample price of 35B-A3B.
+  qwen3.8-27b-tinker:
+    backend: tinker
+    base_url: https://tinker.thinkingmachines.dev/services/tinker-prod/oai/api/v1
+    model: Qwen/Qwen3.8-27B
+    api_key_env: TINKER_API_KEY
+    quantization: tinker-default
+    hardware: tinker
+    family: qwen3
+    tool_mode: native
+    send_parallel_tool_calls: false     # Tinker 422s a multi-call response under false (job 3444)
+    temperature: 0.2
+    max_tokens: 4096
+    price: {prefill: 0.6975, cached_prefill: 0.1395, sample: 5.595}
+    server: {ctx_size: 65536}
+
+  # qwen3-32b-tinker: removed. Qwen3-32B was retired on Tinker on 2026-06-12;
+  # Qwen3-4B and Qwen3-14B are not offered there.
 
   # ----------------------------------------------------------- Mac development
   # Ollama's qwen3:8b is a Q4_K_M GGUF. Not for reported results.
