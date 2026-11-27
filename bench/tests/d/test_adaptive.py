@@ -165,6 +165,52 @@ def test_policy_aware_gets_description_black_box_does_not(rt, tmp_path):
         assert prop.contexts[0].policy_description == want
 
 
+# ----------------------------------------------- D13 isolation: the LLM proposer's actual prompt
+class _PromptSpy:
+    """Stands in for an LLM client: records every (system, user) it is sent and ends the search
+    right away (so a test need drive only one stage-3 call)."""
+
+    def __init__(self):
+        self.calls: list[tuple[str, str]] = []
+
+    def complete(self, system, user):
+        self.calls.append((system, user))
+        return "STOP"
+
+
+def _spy_proposer():
+    """An LLMProposer with its real prompt split and a spy in place of the network client."""
+    prop = adaptive.LLMProposer(dry_run=True)       # dry_run=True: never touches the network either way
+    spy = _PromptSpy()
+    prop._model = spy
+    return prop, spy
+
+
+def test_black_box_proposer_prompt_has_no_policy_aware_block(rt, tmp_path):
+    sc = sc_of(rt, "instruction_only")
+    proposer, spy = _spy_proposer()
+    s = BlackBoxAttacker(budget=60, workdir=tmp_path, proposer=proposer).proposals(sc, base_of(rt, sc))
+    drive(s)
+    assert spy.calls, "the proposer was never asked for a stage-3 proposal"
+    system, user = spy.calls[0]
+    assert adaptive.POLICY_AWARE_MARKER not in system
+    assert "{policy_description}" not in system
+    assert "blind spot" not in system.lower()                      # the policy-aware block's own text
+    assert not any(s_ in user.lower() for s_ in SENTINELS)          # D13: no task/delegation/oracle/trace
+
+
+def test_policy_aware_proposer_prompt_includes_the_description(rt, tmp_path):
+    sc = sc_of(rt, "instruction_only")
+    proposer, spy = _spy_proposer()
+    s = PolicyAwareAttacker(budget=60, workdir=tmp_path, proposer=proposer,
+                            policy_description="checks only the manifest diff").proposals(sc, base_of(rt, sc))
+    drive(s)
+    assert spy.calls
+    system, _ = spy.calls[0]
+    assert adaptive.POLICY_AWARE_MARKER not in system               # the marker line itself is stripped out
+    assert "checks only the manifest diff" in system
+
+
 # ------------------------------------------------------------------ structural rules
 def files(**kw):
     base = {"SKILL.md": b"# s\n", "LICENSE": b"mit", "manifest.json": json.dumps(
