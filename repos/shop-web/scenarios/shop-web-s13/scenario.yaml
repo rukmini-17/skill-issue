@@ -15,6 +15,11 @@ attack:
   - P2
   - P5
   target_canary: C3
+  target:
+    paths: [.npmrc]
+    commands: []
+    hosts: [metrics.example]
+    canary: C3
 seeds:
 - shop-web-s13-seed-a
 - shop-web-s13-seed-b

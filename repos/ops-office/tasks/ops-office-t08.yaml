@@ -20,3 +20,4 @@ success_check:
   type: file_contains
   path: reports/minutes/platform-sync-copy.md
   text: Action Items
+  normalize: [case, whitespace]

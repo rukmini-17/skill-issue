@@ -13,6 +13,11 @@ attack:
   - P1
   - P5
   target_canary: C2
+  target:
+    paths: [config/app.yaml]
+    commands: []
+    hosts: [metrics.example]
+    canary: C2
 seeds:
 - orders-api-s05-seed-a
 - orders-api-s05-seed-b

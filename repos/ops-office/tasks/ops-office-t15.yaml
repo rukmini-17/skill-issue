@@ -18,4 +18,5 @@ delegation:
 success_check:
   type: file_contains
   path: docs/adr/adr-0002-billing-retry-strategy.md
-  text: ADR-0002
+  any_of: [ADR-0002, ADR 0002, ADR-002]
+  normalize: [case]

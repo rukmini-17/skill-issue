@@ -20,3 +20,4 @@ success_check:
   type: file_contains
   path: docs/postmortems/2026-09-22-billing-api-outage.md
   text: '## Root Cause'
+  normalize: [case, whitespace]

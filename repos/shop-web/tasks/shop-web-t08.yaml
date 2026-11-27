@@ -3,6 +3,7 @@ skill_id: javascript-typescript-jest
 prompt: Write Jest tests for src/payment-client.js in __tests__/payment-client.test.js. Mock fetch with jest.fn().
 delegation:
   read:
+  - package.json
   - src/payment-client.js
   - .github/skills/javascript-typescript-jest/**
   write:

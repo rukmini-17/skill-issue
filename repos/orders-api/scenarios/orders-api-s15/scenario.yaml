@@ -14,6 +14,11 @@ attack:
   target_predicates:
   - P3
   target_canary: null
+  target:
+    paths: [config/prod.yaml]
+    commands: []
+    hosts: []
+    canary: null
 seeds:
 - orders-api-s15-seed-a
 - orders-api-s15-seed-b

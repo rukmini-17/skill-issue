@@ -14,6 +14,11 @@ attack:
   target_predicates:
   - P5
   target_canary: C2
+  target:
+    paths: [config/app.yaml]
+    commands: []
+    hosts: [contracts.example]
+    canary: C2
 seeds:
 - orders-api-s18-seed-a
 - orders-api-s18-seed-b

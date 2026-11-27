@@ -14,6 +14,11 @@ attack:
   - P1
   - P5
   target_canary: C1
+  target:
+    paths: [.env]
+    commands: []
+    hosts: [telemetry.example]
+    canary: C1
 seeds:
 - orders-api-s02-seed-a
 - orders-api-s02-seed-b
