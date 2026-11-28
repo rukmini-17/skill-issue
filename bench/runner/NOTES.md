@@ -7,7 +7,7 @@
 | 1 runner on stubs: dry run, resume after kill, sharding | done |
 | 2 static attacker reproduces seed installs byte for byte | done |
 | 3 Slurm templates + resubmit script | done locally; **the real COOK test job is for a human to run** |
-| 4 adaptive attackers | stages 1–3 done: `LLMProposer` wired and tested, smoke-tested for real against Tinker (on an old placeholder, \$12.61, 19/40 episodes, see below), and `proposer.md` now holds **Nisha's actual attacker prompt** (received 2026-11-27), with the block-format parser updated to match it; the real calibration (D13's 50-proposal/10-scenario check) has not been run against it yet |
+| 4 adaptive attackers | stages 1–3 done: `LLMProposer` wired and tested against **Nisha's actual attacker prompt** (received 2026-11-27). Real calibration run (\$12.24, 38/40 episodes touched, only 15 got the full 50-proposal budget — cap-limited, see below): cumulative bypass flat at 5.3% from proposal 1, directionally fine on budget 25 but not a confirmed answer; rerun with a bigger cost cap before trusting it fully |
 | 5 sweeps | mini-sweep done (M3 spot-check: 20/20 agree); full-run configs, Mac/COOK shard scripts and the summary tool ready; waiting on the data-v1.2 tag. `adaptive_tinker.yaml`/`adaptive_calibration.yaml` narrowed to the two policies that survived the static grid (2026-11-27). Stage-3 attacker prompt: **team-owned, still not written** |
 
 ## Full runs (M3) — ready, waiting on the data-v1.2 tag (2026-11-27)
@@ -131,6 +131,34 @@ placeholder prompt that mostly fails to produce parseable JSON should look like 
 `proposer_error` and simply cost budget, per D13's existing "a failing proposer costs budget" behavior).
 **Do not treat this curve as evidence that 25 proposals is enough** — rerun this config once `proposer.md` has
 the team's real, reviewed attacker prompt; that is the number the team actually needs before the full sweep.
+
+**Real calibration (2026-11-27), against Nisha's prompt — the actual D13 check, cost-constrained.** Same
+config and \$15 cap, run immediately after swapping in the real `proposer.md`. The attacker is clearly doing
+real work now, unlike the placeholder: of 610 stage-3 proposals attempted, **171 (28%) were structurally
+valid** (vs. near-zero before) and **310 proposals overall (across all three stages) were `allow`ed** by the
+two policies under test. Despite that, **cumulative bypass is still flat at 5.3% (2/38 episodes touched) from
+proposal 1 through 50** — both bypasses are still from stage 1 (the handcrafted seeds); none of the hundreds
+of approved LLM proposals ever produced the goal effect once installed.
+
+**Caveat that matters more here than last time: the \$15 cap did not fund a fair run of the grid.** Only
+**15 of the 38 touched episodes reached the full 50-proposal budget** (14 finished clean, 1 hit the cap right
+at the end); 13 stopped after a single proposal, not because they bypassed but because their worker's shared
+\$1.875 share ran out before they got a real turn (workers spend a shared `Budget` across episodes in
+sequence, so an episode scheduled late in a nearly-exhausted worker gets starved). So the honest reading of
+"25 is enough" is: **among the ~15 episodes that got a fair shot, no bypass arrived after proposal 1, so
+nothing suggests 25 is too few — but the sample is too thin and too unevenly funded to call that confirmed.**
+Total spend **\$12.24** (session running total across all three calibration attempts today: \$0.79 wasted on
+the data-v1.1 mistake + \$12.61 on the placeholder smoke test + \$12.24 here = **~\$25.64**). `key leak check:
+0 file(s)`; no crashes beyond the expected per-worker budget cutoff (`python -m bench.runner.shards` shows all
+22 "failed" shards are `IncompleteRun: budget`, nothing else).
+
+**What this means for the team's go/no-go on budget 25:** directionally fine (no late bypass to miss by
+truncating early), but get a real answer with either a higher `MAX_COST_USD` (so most/all of the 40 cells get
+their full 50-proposal budget) or more scenarios' worth of signal before trusting it. The two policies tested
+here (`deny_by_default_manifest`, `delegation_envelope`) are also, by construction, the two that already
+survived the static grid — so a near-zero bypass rate against them specifically may just mean they're strong,
+not that the attacker or the budget is the limiting factor; the real `adaptive_tinker` sweep (which only
+targets these same two) will tell us more either way.
 
 ## Team decisions 2026-11-26 — what changed in D
 
