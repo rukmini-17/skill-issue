@@ -85,6 +85,12 @@ would otherwise just be logged as a duplicate and not spend budget, per the exis
    it, so the policy-aware attacker still gets the concrete, per-policy text D13 says it's entitled to, on top
    of her general blind-spot framing. Flag if that's not the intended combination.
 
+**CONFIRMED INTENDED (team, 2026-11-27) — do not "fix":** the no-"stop" signal and the
+`_apply_policy_description` auto-append are both by design. D13 bounds the search by budget +
+stop-at-bypass only, so the attacker must not be able to quit voluntarily (do not add a STOP word);
+and the policy-aware attacker is meant to get the concrete per-policy text appended onto Nisha's
+general blind-spot prose (the black-box attacker gets neither, per the isolation test).
+
 The wiring is safe to run against an unreviewed or malformed prompt (see `adaptive_calibration.yaml`'s comment)
 because a bad attacker only costs search quality, never correctness: invalid or unparseable replies are logged
 as `proposer_error` and simply cost budget, D13 already guarantees that.
