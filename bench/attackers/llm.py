@@ -28,6 +28,7 @@ class ModelSettings:
         s = cls()
         s.base_url = os.environ.get("ATTACKER_BASE_URL", s.base_url)
         s.model = os.environ.get("ATTACKER_MODEL", s.model)
+        s.api_key_env = os.environ.get("ATTACKER_API_KEY_ENV", s.api_key_env)
         unknown = set(d) - set(cls.__dataclass_fields__)
         if unknown:
             raise ValueError(f"unknown attacker_model keys {sorted(unknown)}")

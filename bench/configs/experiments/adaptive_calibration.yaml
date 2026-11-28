@@ -5,6 +5,13 @@
 # blocked, bench/policies/NOTES.md). PROVISIONAL: swap in the top two of the regenerated v1.2
 # decision matrix if it says otherwise.
 # Scenarios: dev split, two per attack class except authority_laundering (one), mixed goals and repos.
+# components.proposer: bench.attackers.adaptive:LLMProposer, reading bench/attackers/prompts/proposer.md —
+# Nisha's attacker prompt, received 2026-11-27 (NOTES.md: wire-format/injection notes). This run is
+# THE calibration D13 asks for (not a wiring smoke test) now that the real prompt is in place.
+# Attacker model: Qwen3.6-35B-A3B on Tinker — set
+# ATTACKER_MODEL=Qwen/Qwen3.6-35B-A3B
+# ATTACKER_BASE_URL=https://tinker.thinkingmachines.dev/services/tinker-prod/oai/api/v1
+# ATTACKER_API_KEY_ENV=TINKER_API_KEY before launching (no experiment-config field for this yet).
 # Submit: SHARDS=4 MAX_COST_USD=20 sh bench/runner/slurm/submit_tinker.sh bench/configs/experiments/adaptive_calibration.yaml
 name: adaptive_calibration
 kind: attack
@@ -27,5 +34,6 @@ invocations: [natural]
 repeats: 1
 budget: 50
 stop_at_bypass: true
-baseline_runs: []
+baseline_runs: ["/nfs/cook-home/projects/skill-issue/runs/rnazre@campus.ads.umass.edu/task_completion/task_completion_tinker"]   # COOK absolute path: the 27B benign task_completion baseline; repoint when running elsewhere
 harness_options: {isolation: netns, observer: strace, run_timeout: 1200, setup: d9}
+components: {proposer: "bench.attackers.adaptive:LLMProposer"}

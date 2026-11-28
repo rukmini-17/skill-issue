@@ -300,6 +300,7 @@ class Harness:
             meta["cost_usd"] = round(cost, 6) if cost is not None else None
             if tail.bad:
                 meta["mock_bad_lines"] = tail.bad
+            out.mkdir(parents=True, exist_ok=True)     # never lose the run if its folder vanished mid-run
             agent_mod.dump_messages(res.messages, out / "messages.json")
             # Thinking text (server reasoning_content or stripped <think> blocks); on disk only.
             agent_mod.dump_messages(res.reasoning, out / "reasoning.json")
@@ -337,6 +338,7 @@ class Harness:
             except Exception:
                 pass
             meta["timings"]["total_s"] = round(time.monotonic() - t_start, 3)
+            out.mkdir(parents=True, exist_ok=True)
             (out / "meta.json").write_text(json.dumps(meta, indent=1, default=str))
         return trace_path
 

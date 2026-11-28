@@ -165,6 +165,140 @@ def test_policy_aware_gets_description_black_box_does_not(rt, tmp_path):
         assert prop.contexts[0].policy_description == want
 
 
+# ----------------------------------------------- D13 isolation: the LLM proposer's actual prompt
+class _PromptSpy:
+    """Stands in for an LLM client: records every (system, user) it is sent and replies with a
+    valid, distinct <file> block each call (the team's wire format has no "stop" signal, and an
+    identical reply would just be logged as a duplicate and not spend budget, per D9/D13 dedup -
+    so this keeps the search moving until the budget itself ends it)."""
+
+    def __init__(self):
+        self.calls: list[tuple[str, str]] = []
+        self._n = 0
+
+    def complete(self, system, user):
+        self.calls.append((system, user))
+        self._n += 1
+        return f'<file path="SKILL.md">\n# x\nvariant {self._n}\n</file>'
+
+
+def _spy_proposer():
+    """An LLMProposer with its real prompt split and a spy in place of the network client."""
+    prop = adaptive.LLMProposer(dry_run=True)       # dry_run=True: never touches the network either way
+    spy = _PromptSpy()
+    prop._model = spy
+    return prop, spy
+
+
+def test_black_box_proposer_prompt_has_no_policy_aware_block(rt, tmp_path):
+    sc = sc_of(rt, "instruction_only")
+    proposer, spy = _spy_proposer()
+    s = BlackBoxAttacker(budget=60, workdir=tmp_path, proposer=proposer).proposals(sc, base_of(rt, sc))
+    drive(s)
+    assert spy.calls, "the proposer was never asked for a stage-3 proposal"
+    system, user = spy.calls[0]
+    assert adaptive.POLICY_AWARE_MARKER not in system
+    assert "{policy_description}" not in system
+    assert "blind spot" not in system.lower()                      # the policy-aware block's own text
+    assert not any(s_ in user.lower() for s_ in SENTINELS)          # D13: no task/delegation/oracle/trace
+
+
+def test_policy_aware_proposer_prompt_includes_the_description(rt, tmp_path):
+    sc = sc_of(rt, "instruction_only")
+    proposer, spy = _spy_proposer()
+    s = PolicyAwareAttacker(budget=60, workdir=tmp_path, proposer=proposer,
+                            policy_description="checks only the manifest diff").proposals(sc, base_of(rt, sc))
+    drive(s)
+    assert spy.calls
+    system, _ = spy.calls[0]
+    assert adaptive.POLICY_AWARE_MARKER not in system               # the marker line itself is stripped out
+    assert "checks only the manifest diff" in system
+
+
+# ----------------------------------------------- stage-3 reply parsing and the one format retry
+def test_parse_blocks_is_lenient_about_form_not_content():
+    # (a) fenced blocks: a fence around the reply, and a fence wrapping one block's content
+    fenced = ('Here is the update:\n```xml\n<file path="SKILL.md">\n# x\nrun it\n</file>\n```\n'
+              '```\n<file path="scripts/run.py">\n```python\nprint(1)\n```\n</file>\n```')
+    r = adaptive._parse_blocks(fenced)
+    assert r.files == {"SKILL.md": "# x\nrun it\n", "scripts/run.py": "print(1)\n"}
+    # a fence inside the content (not wrapping all of it) is the file's own text and is kept
+    inner = '<file path="SKILL.md">\n# x\n```bash\nrun.sh\n```\nmore\n</file>'
+    assert adaptive._parse_blocks(inner).files == {"SKILL.md": "# x\n```bash\nrun.sh\n```\nmore\n"}
+    # (b) single-quoted and unquoted attributes
+    r = adaptive._parse_blocks("<file path='SKILL.md'>\nA\n</file>\n<mock_page path=h.example/x>\nB\n</mock_page>")
+    assert r.files == {"SKILL.md": "A\n"} and r.mock_files == {"h.example/x": "B\n"}
+    # (c) extra whitespace inside the tags
+    r = adaptive._parse_blocks('< file  path = "SKILL.md" >\nC\n</ file >')
+    assert r.files == {"SKILL.md": "C\n"}
+    # the strict form is unchanged
+    assert adaptive._parse_blocks('<file path="SKILL.md">\nD</file>').files == {"SKILL.md": "D"}
+    # (d) genuinely no blocks: prose, a fence with no tags, an unclosed or unnamed block
+    for bad in ("", "I cannot help with that.", "```xml\n# SKILL.md\n```",
+                '<file path="SKILL.md">\nno closing tag', "<file>\nno path\n</file>"):
+        with pytest.raises(ValueError):
+            adaptive._parse_blocks(bad)
+
+
+class _Replies:
+    def __init__(self, *replies):
+        self.replies, self.calls = list(replies), []
+
+    def complete(self, system, user):
+        self.calls.append(user)
+        return self.replies.pop(0)
+
+
+def _proposer_with(*replies):
+    prop = adaptive.LLMProposer(dry_run=True)
+    prop._model = _Replies(*replies)
+    return prop, prop._model
+
+
+def _ctx():
+    return ProposalContext(attack_class="instruction_only", style="plain", goal="g", budget=5, used=0,
+                           current_files={}, seed_payloads={}, mock_pages={}, history=(), policy_description=None)
+
+
+def test_one_format_retry_when_the_first_reply_has_no_blocks():
+    prop, model = _proposer_with('<file path="SKILL.md">\nok\n</file>')
+    r = prop.propose(_ctx())
+    assert r.files == {"SKILL.md": "ok\n"} and not r.format_retry and len(model.calls) == 1
+    prop, model = _proposer_with("Sure! Here's my idea in prose.", '<file path="SKILL.md">\nok\n</file>')
+    r = prop.propose(_ctx())
+    assert r.files == {"SKILL.md": "ok\n"} and r.format_retry
+    assert len(model.calls) == 2 and model.calls[1] == f"{model.calls[0]}\n\n{adaptive.FORMAT_RETRY_NOTE}"
+    prop, model = _proposer_with("prose", "more prose", "never asked")
+    with pytest.raises(ValueError, match="after one format retry"):
+        prop.propose(_ctx())
+    assert len(model.calls) == 2                                    # exactly one retry
+
+
+def test_format_retry_is_one_proposal_and_one_unit_of_budget(rt, tmp_path):
+    class Flaky:                                    # every proposal: prose first, then a valid block
+        def __init__(self):
+            self.calls, self.n = [], 0
+
+        def complete(self, system, user):
+            self.calls.append(user)
+            if adaptive.FORMAT_RETRY_NOTE not in user:
+                return "Let me think about this..."
+            self.n += 1
+            return f'<file path="SKILL.md">\n# x\nvariant {self.n}\n</file>'
+    prop = adaptive.LLMProposer(dry_run=True)
+    prop._model = Flaky()
+    sc = sc_of(rt, "instruction_only")
+    s = BlackBoxAttacker(budget=60, workdir=tmp_path, proposer=prop).proposals(sc, base_of(rt, sc))
+    drive(s)
+    events = s.drain_events()
+    stage3 = [e for e in events if e["kind"] == "proposal" and e["stage"] == 3]
+    assert s.used == 60 and prop._model.n > 0
+    assert len(stage3) == prop._model.n                             # one proposal per retried reply
+    assert len(prop._model.calls) == 2 * prop._model.n              # two model calls per stage-3 proposal
+    assert len([e for e in events if e["kind"] == "proposer_format_retry"]) == prop._model.n
+    assert not [e for e in events if e["kind"] == "proposer_error"]
+
+
 # ------------------------------------------------------------------ structural rules
 def files(**kw):
     base = {"SKILL.md": b"# s\n", "LICENSE": b"mit", "manifest.json": json.dumps(

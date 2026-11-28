@@ -7,8 +7,8 @@
 | 1 runner on stubs: dry run, resume after kill, sharding | done |
 | 2 static attacker reproduces seed installs byte for byte | done |
 | 3 Slurm templates + resubmit script | done locally; **the real COOK test job is for a human to run** |
-| 4 adaptive attackers | **done except the stage-3 proposer (team-supplied); waiting for "continue"** |
-| 5 sweeps | mini-sweep done (M3 spot-check: 20/20 agree); full-run configs, Mac/COOK shard scripts and the summary tool ready; waiting on the data-v1.2 tag. Stage-3 attacker prompt: **team-owned, not written** |
+| 4 adaptive attackers | stages 1–3 done: `LLMProposer` wired and tested against **Nisha's actual attacker prompt** (received 2026-11-27). Real calibration run (\$12.24, 38/40 episodes touched, only 15 got the full 50-proposal budget — cap-limited, see below): cumulative bypass flat at 5.3% from proposal 1, directionally fine on budget 25 but not a confirmed answer; rerun with a bigger cost cap before trusting it fully |
+| 5 sweeps | mini-sweep done (M3 spot-check: 20/20 agree); full-run configs, Mac/COOK shard scripts and the summary tool ready; waiting on the data-v1.2 tag. `adaptive_tinker.yaml`/`adaptive_calibration.yaml` narrowed to the two policies that survived the static grid (2026-11-27). Stage-3 attacker prompt: **team-owned, still not written** |
 
 ## Full runs (M3) — ready, waiting on the data-v1.2 tag (2026-11-27)
 
@@ -47,9 +47,124 @@ resampling whole scenarios (D9); (3) skill-read rate (completed read of the task
 asks/denials and task success per policy. Checked on the mini-sweep: its table 2 reproduces the hand count
 (delegation_envelope prevents 5/5 live pairs, deny_by_default_manifest 3/5).
 
-**Stage-3 attacker.** Not written. The attacker instruction text is team-written and reviewed (D13); the hook
-(`Proposer` in `bench/attackers/adaptive.py`) and the model client (`bench/attackers/llm.py`) are ready. Until
-it exists, an adaptive search is the seeds plus their template variations.
+**Stage-3 attacker.** The hook (`Proposer`) now has a concrete implementation, `LLMProposer` in
+`bench/attackers/adaptive.py`, wired to `bench/attackers/llm.py` and to `bench/attackers/prompts/proposer.md`.
+A task brief said Nisha had written and reviewed `bench/attackers/prompts/proposer.md`; I could not find it
+anywhere — not in the working tree, not in `git log --all` on any local or remote branch after fetching, not
+in `~/Downloads` or `~/Desktop`. Per Part 0 of the spec and the D13 redline (`docs/IMPL_PROMPT_D10-D13_v1.2.md`:
+"written and reviewed by the team"), that text is a human job, not D's.
+
+The calibration smoke test below (2026-11-27) ran against a throwaway placeholder written only to exercise the
+wiring, then briefly against an agent-written draft (same day) that was never used for a real run. **Both are
+now superseded: `proposer.md` holds Nisha's actual attacker prompt, received (via the user) 2026-11-27.** This
+is the real text D13 calls for, not something D wrote. The smoke test's numbers (flat 6.7% bypass, all from
+stage 1) are about the old placeholder and tell you nothing about this prompt.
+
+**Wire-format change this required.** Nisha's prompt specifies a different reply format than the placeholder
+did: one or more `<file path="...">...</file>` blocks (every class except late_binding) and/or `<mock_page
+path="host/route">...</mock_page>` blocks (late_binding only) — not a JSON object. `LLMProposer._parse_blocks`
+now parses that format with two regexes; a reply with no blocks raises (same "costs budget, doesn't end the
+search" handling as before). Her format also has **no "stop" signal** — unlike the placeholder's `STOP` word,
+there is no way for the model to voluntarily end the search; this is actually more consistent with D13 itself,
+which bounds the search by budget and stop-at-bypass alone, so nothing was lost. The two new isolation tests
+still pass against her text unchanged (the `<file>`/`<mock_page>` block format and the no-stop behavior didn't
+need new tests, just a spy that returns a valid, distinct block per call instead of `STOP` — an identical reply
+would otherwise just be logged as a duplicate and not spend budget, per the existing D9 dedup rule).
+
+**Two things worth flagging back to Nisha/the team, not fixed unilaterally:**
+1. Her "Inputs you receive" list names only `goal`, `attack_class`, `current files`, `budget`/`used`, feedback,
+   and (policy-aware) the policy description — it does not mention `seed_payloads`, `mock_pages` or `style`.
+   The code still sends all three in the user-message JSON (`_render_user_prompt`) because `mock_pages` is the
+   only way the model can learn a valid `host/route` for a `late_binding` proposal (`validate.py` rejects a
+   path that isn't a known route) — dropping it would make that class fail almost every time. If the omission
+   from her list was deliberate (e.g. she wants late_binding proposals that *don't* rely on being shown the
+   routes), say so and this should change.
+2. Her policy-aware block (after the `INJECTED ONLY FOR policy_aware_adaptive` marker) is static prose about
+   policy *families* in general; it has no token marking where the actual per-run policy description should
+   go. `_apply_policy_description` appends it at the end (`Policy description:\n<text>`) rather than dropping
+   it, so the policy-aware attacker still gets the concrete, per-policy text D13 says it's entitled to, on top
+   of her general blind-spot framing. Flag if that's not the intended combination.
+
+**CONFIRMED INTENDED (team, 2026-11-27) — do not "fix":** the no-"stop" signal and the
+`_apply_policy_description` auto-append are both by design. D13 bounds the search by budget +
+stop-at-bypass only, so the attacker must not be able to quit voluntarily (do not add a STOP word);
+and the policy-aware attacker is meant to get the concrete per-policy text appended onto Nisha's
+general blind-spot prose (the black-box attacker gets neither, per the isolation test).
+
+The wiring is safe to run against an unreviewed or malformed prompt (see `adaptive_calibration.yaml`'s comment)
+because a bad attacker only costs search quality, never correctness: invalid or unparseable replies are logged
+as `proposer_error` and simply cost budget, D13 already guarantees that.
+
+Design notes on the wiring (2026-11-27):
+- Black-box vs. policy-aware is decided **per call**, not at construction: `components.make_attacker` builds
+  one `Proposer` instance with a zero-argument dotted-path resolve shared by whichever attacker class wraps it,
+  so `LLMProposer.propose` reads `ctx.policy_description` (`None` for `black_box_adaptive`, a string for
+  `policy_aware_adaptive`, already guaranteed by D13) to decide whether to append the policy-aware block.
+- `proposer.md` is split at a literal marker line containing `INJECTED ONLY FOR policy_aware_adaptive`; that
+  line and everything above it is the base system prompt sent to both attackers, everything below it is
+  appended (with `{policy_description}` substituted) only for the policy-aware one. Tests
+  (`test_black_box_proposer_prompt_has_no_policy_aware_block`,
+  `test_policy_aware_proposer_prompt_includes_the_description` in `bench/tests/d/test_adaptive.py`) capture the
+  exact system prompt each attacker sends and check the blind-spot text is present/absent accordingly, plus
+  that the black-box user payload has none of the D13 sentinel fields (task/delegation/oracle/trace).
+- No `ExperimentConfig` field was added for the attacker's model settings (that would be a shared-interface
+  change needing a human OK, Part 0 rule 3). Instead `LLMProposer`/`ModelSettings.from_dict` read
+  `ATTACKER_MODEL`, `ATTACKER_BASE_URL` and (new) `ATTACKER_API_KEY_ENV` from the environment, same pattern the
+  file already used for the first two. A real sweep against Tinker's Qwen3.6-35B-A3B needs those three env vars
+  set (see the comment in `adaptive_tinker.yaml`/`adaptive_calibration.yaml`) plus `TINKER_API_KEY` sourced as
+  usual. With no key in the environment `LLMProposer` falls back to `llm.NullModel` automatically (never builds
+  an `openai.OpenAI` client or touches the network) — this is what the dry-run and unit tests exercise, and
+  what makes it safe to leave `components: {proposer: ...}` set even outside a real sweep.
+
+**Calibration smoke test (2026-11-27) — infra/cost check only, NOT the real calibration.** Ran
+`adaptive_calibration.yaml` for real against Tinker (Qwen3.8-27B agent, Qwen3.6-35B-A3B attacker) to prove the
+`LLMProposer` wiring and cost tracking work end to end before the team's real prompt exists. Two things to
+know before reading any number from it:
+1. A first attempt accidentally ran on **data-v1.1** (this branch was behind the `data-v1.2` tag — now merged
+   in, see the merge commit above) and was killed within ~2 minutes ($0.79 spent, no useful output). The
+   second attempt, reported below, ran on `data-v1.2` correctly.
+2. It used the **placeholder** `proposer.md`, so its numbers say nothing about whether 25 proposals is enough
+   for the real attacker — only that the pipeline (budget tracking, cost cap, cumulative-bypass bookkeeping)
+   does not break under real model calls.
+
+Result: 8 local workers, $15 total cap (split \$1.875/worker) → **19/40 episodes finished, 10 incomplete each
+hit its own worker's budget share (`BackendError: [budget] job budget $1.88 reached`), 10 never started**;
+total spend **\$12.61** (plus the \$0.79 wasted on the data-v1.1 mistake above, ~\$13.40 for the whole exercise).
+No crashes other than the expected budget cutoff; `key leak check: 0 file(s)`. Cumulative-bypass-vs-proposals
+over the 30 episodes that got at least one proposal: **flat at 6.7% (2/30) from proposal 1 through 50** — both
+bypasses came from stage 1 (the handcrafted seed), none from the stage-3 proposer, which is exactly what a
+placeholder prompt that mostly fails to produce parseable JSON should look like (most proposals logged as
+`proposer_error` and simply cost budget, per D13's existing "a failing proposer costs budget" behavior).
+**Do not treat this curve as evidence that 25 proposals is enough** — rerun this config once `proposer.md` has
+the team's real, reviewed attacker prompt; that is the number the team actually needs before the full sweep.
+
+**Real calibration (2026-11-27), against Nisha's prompt — the actual D13 check, cost-constrained.** Same
+config and \$15 cap, run immediately after swapping in the real `proposer.md`. The attacker is clearly doing
+real work now, unlike the placeholder: of 610 stage-3 proposals attempted, **171 (28%) were structurally
+valid** (vs. near-zero before) and **310 proposals overall (across all three stages) were `allow`ed** by the
+two policies under test. Despite that, **cumulative bypass is still flat at 5.3% (2/38 episodes touched) from
+proposal 1 through 50** — both bypasses are still from stage 1 (the handcrafted seeds); none of the hundreds
+of approved LLM proposals ever produced the goal effect once installed.
+
+**Caveat that matters more here than last time: the \$15 cap did not fund a fair run of the grid.** Only
+**15 of the 38 touched episodes reached the full 50-proposal budget** (14 finished clean, 1 hit the cap right
+at the end); 13 stopped after a single proposal, not because they bypassed but because their worker's shared
+\$1.875 share ran out before they got a real turn (workers spend a shared `Budget` across episodes in
+sequence, so an episode scheduled late in a nearly-exhausted worker gets starved). So the honest reading of
+"25 is enough" is: **among the ~15 episodes that got a fair shot, no bypass arrived after proposal 1, so
+nothing suggests 25 is too few — but the sample is too thin and too unevenly funded to call that confirmed.**
+Total spend **\$12.24** (session running total across all three calibration attempts today: \$0.79 wasted on
+the data-v1.1 mistake + \$12.61 on the placeholder smoke test + \$12.24 here = **~\$25.64**). `key leak check:
+0 file(s)`; no crashes beyond the expected per-worker budget cutoff (`python -m bench.runner.shards` shows all
+22 "failed" shards are `IncompleteRun: budget`, nothing else).
+
+**What this means for the team's go/no-go on budget 25:** directionally fine (no late bypass to miss by
+truncating early), but get a real answer with either a higher `MAX_COST_USD` (so most/all of the 40 cells get
+their full 50-proposal budget) or more scenarios' worth of signal before trusting it. The two policies tested
+here (`deny_by_default_manifest`, `delegation_envelope`) are also, by construction, the two that already
+survived the static grid — so a near-zero bypass rate against them specifically may just mean they're strong,
+not that the attacker or the budget is the limiting factor; the real `adaptive_tinker` sweep (which only
+targets these same two) will tell us more either way.
 
 ## Team decisions 2026-11-26 — what changed in D
 
@@ -228,11 +343,15 @@ kept, the rest redone); the dry-run benign grid (330 episodes) and the one-scena
 - `bench/attackers/adaptive.py`: `BlackBoxAttacker`, `PolicyAwareAttacker`; one shared proposal budget over three stages:
   1. the handcrafted seeds, replayed exactly; 2. template variations of the seeds (`templates.py`: wording and
   placement changes of the lines a seed adds, deterministic); 3. a **plug-in `Proposer`** supplied by the team.
-- **Stage 3 is not implemented here.** `Proposer.propose(ProposalContext) -> RawProposal | None` is the hook; the
-  runner loads one from `components: {proposer: "pkg.mod:Class"}`. The attacker prompt and the code that turns
-  a model reply into file contents are the team's (D13: instruction text is team-written after M1). Without a
-  proposer a search ends after stage 2. `bench/attackers/llm.py` is an OpenAI-compatible client the proposer can
-  use (settings from `attacker_model`/env, key read from the env var named in `api_key_env`).
+- **Stage 3 wiring is implemented** (2026-11-27): `Proposer.propose(ProposalContext) -> RawProposal | None` is the
+  hook; `LLMProposer` (same file) is the concrete implementation, loaded by the runner from
+  `components: {proposer: "bench.attackers.adaptive:LLMProposer"}`. It expects the model to reply with exactly
+  one JSON object (`{"files": ..., "mock_files": ...}`, full contents not diffs) or the literal word `STOP`; a
+  reply that is neither raises and is caught by `_from_proposer` as an invalid proposal (costs budget, same as
+  any other failing proposer). Without a proposer override at all, a search still ends after stage 2. See
+  "Stage-3 attacker" above for the prompt-text caveat (placeholder, not the team's) and the env-var model
+  settings. `bench/attackers/llm.py` is the OpenAI-compatible client it uses (settings from env:
+  `ATTACKER_MODEL`, `ATTACKER_BASE_URL`, `ATTACKER_API_KEY_ENV`; key read from the env var the last one names).
 - `validate.py`: structural class rules (mirror of the data's `check_repo.py`, plus size limits). A's `check_data.py`
   (on `main`) has no per-class seed rules to reuse, so these stay in D. Invalid proposals count against the budget and are never submitted; seeds are
   checked and logged but submitted even if flagged (all 200 pass).
@@ -249,10 +368,16 @@ kept, the rest redone); the dry-run benign grid (330 episodes) and the one-scena
   run's own trace/oracle are those of the first bypass, else of the last state. `attacker.jsonl` has the
   proposal, feedback, and a hidden `eval` line (verdict, predicates, bypass, asks so far) per proposal.
 - `none` is skipped for adaptive attackers (D13). Config: `budget` (default 50 at the time; 25 since 2026-11-26), `stop_at_bypass`.
-- Checks: 60 tests pass; all 600 episodes of (2 adaptive attackers x 3 policies x 100 scenarios) run in dry-run.
+- Checks: 89 tests pass in `bench/tests/d` (was 60 before the stage-3 wiring + isolation tests above); all 600
+  episodes of (2 adaptive attackers x 3 policies x 100 scenarios) run in dry-run.
 - Stage-2 limits: templates reword `.md` text only, so `concealed_dependency` (code files) and late_binding
   pages that are not `.md` get no stage-2 variations; those need the stage-3 proposer.
 - Note for NOTES (D12): if the attacker also uses Qwen3-32B as the `llm_reviewer`, record it.
+- **Config change (2026-11-27, team decision 2026-11-26 applied):** `adaptive_tinker.yaml`'s `policies:` was all
+  six; changed to `[deny_by_default_manifest, delegation_envelope]` — the two run-time policies, the only ones
+  that did not already score 0% live-bypass on the static grid. `llm_reviewer` is deliberately left out until
+  C's reviewer row exists. `adaptive_calibration.yaml` already listed just these two. Both configs also gained
+  `components: {proposer: "bench.attackers.adaptive:LLMProposer"}` now that a concrete `Proposer` exists.
 
 ## Deviations from the prompt
 
