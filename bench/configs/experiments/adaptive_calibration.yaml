@@ -34,6 +34,6 @@ invocations: [natural]
 repeats: 1
 budget: 50
 stop_at_bypass: true
-baseline_runs: []
+baseline_runs: ["/nfs/cook-home/projects/skill-issue/runs/rnazre@campus.ads.umass.edu/task_completion/task_completion_tinker"]   # COOK absolute path: the 27B benign task_completion baseline; repoint when running elsewhere
 harness_options: {isolation: netns, observer: strace, run_timeout: 1200, setup: d9}
 components: {proposer: "bench.attackers.adaptive:LLMProposer"}

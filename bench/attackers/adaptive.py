@@ -75,6 +75,7 @@ class ProposalContext:
 class RawProposal:
     files: dict[str, str] = field(default_factory=dict)        # changed skill files, full contents
     mock_files: dict[str, str] = field(default_factory=dict)   # "host/path" -> full page (late_binding)
+    format_retry: bool = False                                 # parsed only after the one format retry
 
 
 class Proposer(Protocol):
@@ -85,8 +86,21 @@ class Proposer(Protocol):
 PROMPT_PATH = Path(__file__).parent / "prompts" / "proposer.md"
 POLICY_AWARE_MARKER = "INJECTED ONLY FOR policy_aware_adaptive"
 POLICY_DESCRIPTION_TOKEN = "{policy_description}"
-_FILE_BLOCK_RE = re.compile(r'<file\s+path="([^"]*)">\n?(.*?)</file>', re.S)
-_MOCK_BLOCK_RE = re.compile(r'<mock_page\s+path="([^"]*)">\n?(.*?)</mock_page>', re.S)
+FORMAT_RETRY_NOTE = ("Format error: reply with ONLY the <file path=\"...\">...</file> (or "
+                     "<mock_page path=\"...\">...</mock_page>) block(s), no prose, no code fences.")
+
+
+def _block_re(tag: str) -> re.Pattern:
+    """``<tag path=...>body</tag>``, tolerant of the quoting and spacing models actually emit:
+    path="x", path='x' or path=x (unquoted, up to whitespace or >), and extra whitespace around
+    the tag name, the ``=`` and before ``>`` (``< file path = "x" >``, ``</ file >``)."""
+    return re.compile(
+        rf'<\s*{tag}\s+path\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|([^\s>"\']+))\s*>(.*?)<\s*/\s*{tag}\s*>', re.S)
+
+
+_FILE_BLOCK_RE = _block_re("file")
+_MOCK_BLOCK_RE = _block_re("mock_page")
+_FENCE_RE = re.compile(r"^[ \t]*```[\w.+-]*[ \t]*$")       # a line that is just ``` or ```<lang>
 
 
 def _split_prompt(text: str) -> tuple[str, str]:
@@ -115,13 +129,36 @@ def _apply_policy_description(aware_block: str, policy_description: str) -> str:
     return f"{aware_block}\n\nPolicy description:\n{policy_description}"
 
 
+def _block_body(body: str) -> str:
+    """A block's content: drop the newline right after the opening tag, and a code fence that
+    wraps the whole content (first line ``` / ```<lang> and last line ```). Fences elsewhere in
+    the content are kept: a SKILL.md may legitimately contain fenced code."""
+    if body.startswith("\n"):
+        body = body[1:]
+    lines = body.split("\n")
+    while lines and lines[-1].strip() == "" and len(lines) > 1:     # trailing blank lines before </tag>
+        lines.pop()
+    if len(lines) >= 2 and _FENCE_RE.match(lines[0]) and lines[-1].strip() == "```":
+        return "\n".join(lines[1:-1]) + "\n"
+    return body
+
+
+def _blocks(regex: re.Pattern, reply: str) -> dict[str, str]:
+    return {dq or sq or bare: _block_body(body) for dq, sq, bare, body in regex.findall(reply)}
+
+
 def _parse_blocks(reply: str) -> RawProposal:
     """Parse the team's wire format: one or more ``<file path="...">...</file>`` blocks (every
     class except late_binding) and/or ``<mock_page path="host/route">...</mock_page>`` blocks
-    (late_binding only). A leading newline right after the opening tag is dropped; everything else
-    between the tags is kept verbatim as that file's full new content."""
-    files = {p: c[1:] if c.startswith("\n") else c for p, c in _FILE_BLOCK_RE.findall(reply)}
-    mock_files = {p: c[1:] if c.startswith("\n") else c for p, c in _MOCK_BLOCK_RE.findall(reply)}
+    (late_binding only). Everything between the tags is that file's full new content, except a
+    leading newline and a code fence wrapping the whole content (see ``_block_body``).
+
+    Lenient about form, not content: blocks may sit inside markdown code fences (```xml ... ```;
+    fence lines outside a block are simply not part of any block), and the opening tag may use
+    double, single or no quotes and extra whitespace (see ``_block_re``). A reply with no complete
+    open/close tag pair still raises: nothing is invented."""
+    files = _blocks(_FILE_BLOCK_RE, reply)
+    mock_files = _blocks(_MOCK_BLOCK_RE, reply)
     if not files and not mock_files:
         raise ValueError("reply has no <file> or <mock_page> blocks")
     return RawProposal(files=files, mock_files=mock_files)
@@ -154,9 +191,11 @@ class LLMProposer:
     A reply is expected to be one or more ``<file path="...">...</file>`` / ``<mock_page
     path="...">...</mock_page>`` blocks (the team's wire format; see ``_parse_blocks``) and nothing
     else. There is no "stop" signal in that format — the search is bounded purely by budget, as
-    D13 specifies. A reply with no parseable blocks raises, which the caller
-    (``AdaptiveSession._from_proposer``) already treats as a failed proposal that still costs the
-    budget ("a failing proposer costs budget") rather than ending the search.
+    D13 specifies. A reply with no parseable blocks is re-asked once, in the same proposal, with
+    ``FORMAT_RETRY_NOTE`` appended to the user prompt; if that reply has none either, ``propose``
+    raises, which the caller (``AdaptiveSession._from_proposer``) treats as a failed proposal that
+    still costs the budget ("a failing proposer costs budget") rather than ending the search. The
+    retry never costs a second unit of budget.
     """
 
     def __init__(self, prompt_path: Path | str | None = None, model_cfg: dict | None = None,
@@ -173,8 +212,17 @@ class LLMProposer:
         system = self._base_prompt
         if ctx.policy_description is not None and self._policy_aware_block:
             system = f"{system}\n\n{_apply_policy_description(self._policy_aware_block, ctx.policy_description)}"
-        reply = self._model.complete(system, _render_user_prompt(ctx))
-        return _parse_blocks(reply)
+        user = _render_user_prompt(ctx)
+        try:
+            return _parse_blocks(self._model.complete(system, user))
+        except ValueError:
+            pass
+        try:                                     # one format retry, same proposal, same budget unit
+            raw = _parse_blocks(self._model.complete(system, f"{user}\n\n{FORMAT_RETRY_NOTE}"))
+        except ValueError as e:
+            raise ValueError(f"{e} (also after one format retry)") from None
+        raw.format_retry = True
+        return raw
 
 
 # ----------------------------------------------------------------------------- helpers
@@ -349,6 +397,8 @@ class AdaptiveSession:
         if raw is None:
             self._stage3_done = True
             return None
+        if raw.format_retry:
+            self.events.append({"kind": "proposer_format_retry", "recovered": True})
         files = dict(self.installed)
         files.update({k: v.encode("utf-8") for k, v in raw.files.items()})
         mock = {k: v.encode("utf-8") for k, v in raw.mock_files.items()}
